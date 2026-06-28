@@ -37,6 +37,47 @@
       --shadow-lift: 0 1px 0 rgba(255,255,255,0.06) inset, 0 4px 12px rgba(0,0,0,0.6), 0 20px 48px rgba(0,0,0,0.55);
       --r-xs:      5px;
     }
+    /* ── Light mode ─────────────────────────── */
+    [data-theme="light"] {
+      --bg:        #F2EEE7;
+      --bg-1:      #EAE5DC;
+      --bg-2:      #DDD8CE;
+      --bg-3:      #CFC9BE;
+      --line:      rgba(0,0,0,0.09);
+      --line-2:    rgba(0,0,0,0.16);
+      --ink:       #1A1A16;
+      --ink-2:     rgba(26,26,22,0.58);
+      --ink-3:     rgba(26,26,22,0.34);
+      --amber:     #A86D28;
+      --amber-bg:  rgba(168,109,40,0.1);
+      --amber-line:rgba(168,109,40,0.28);
+      --green:     #3A6E50;
+      --green-bg:  rgba(58,110,80,0.12);
+      --red:       #7A3535;
+      --red-bg:    rgba(122,53,53,0.12);
+      --shadow-card: 0 1px 0 rgba(255,255,255,0.7) inset, 0 2px 6px rgba(0,0,0,0.07), 0 10px 24px rgba(0,0,0,0.07);
+      --shadow-lift: 0 1px 0 rgba(255,255,255,0.9) inset, 0 4px 14px rgba(0,0,0,0.1), 0 18px 40px rgba(0,0,0,0.1);
+    }
+    [data-theme="light"] body::before { background: rgba(242,238,231,0.55); }
+    [data-theme="light"] .card { background: rgba(255,255,255,0.76); border-color: rgba(0,0,0,0.09); }
+    [data-theme="light"] .card:hover { border-color: rgba(0,0,0,0.16); }
+    [data-theme="light"] .card.peak { border-color: rgba(58,110,80,0.3); }
+    [data-theme="light"] #bottom-nav { background: rgba(242,238,231,0.96); border-top-color: rgba(0,0,0,0.1); }
+    [data-theme="light"] #status-bar { background: rgba(234,229,220,0.8); }
+    [data-theme="light"] .sheet { background: var(--bg-1); }
+    [data-theme="light"] .fi, [data-theme="light"] .fs { background: var(--bg); border-color: rgba(0,0,0,0.12); }
+    [data-theme="light"] .icon-opt { background: var(--bg); border-color: rgba(0,0,0,0.1); }
+    [data-theme="light"] .alt-chip { background: var(--bg-1); }
+    [data-theme="light"] .alt-chip.active { background: var(--bg-2); }
+    [data-theme="light"] .done-card { background: rgba(255,255,255,0.7); }
+    [data-theme="light"] .s-hr { background: rgba(0,0,0,0.05); }
+    [data-theme="light"] .s-hr.night { background: rgba(0,0,0,0.04); }
+    [data-theme="light"] .tpl-btn { background: var(--bg); }
+    [data-theme="light"] .geo-result { background: var(--bg); }
+    [data-theme="light"] .s-list-item { background: var(--bg); }
+    [data-theme="light"] .nav-tab.nav-add { color: #1A1A16; }
+    [data-theme="light"] .nav-tab.nav-add .ni { color: #1A1A16; }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { -webkit-text-size-adjust: 100%; }
     body {
@@ -320,6 +361,17 @@
       white-space: nowrap;
     }
 
+    /* ── Strip drag hint ──────────────────────── */
+    .strip { cursor: ew-resize; }
+    .strip-hint {
+      font-size: 0.5rem;
+      color: var(--ink-3);
+      font-family: 'Menlo','Monaco',monospace;
+      margin-top: 3px;
+      text-align: right;
+      letter-spacing: .04em;
+    }
+
     /* ── Alternative windows ────────────────── */
     .alts { margin-top: 13px; }
     .alts-label {
@@ -334,7 +386,15 @@
     .alts-row {
       display: flex;
       gap: 6px;
-      flex-wrap: wrap;
+      overflow-x: auto;
+      flex-wrap: nowrap;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      padding-bottom: 4px;
+    }
+    .alts-row::-webkit-scrollbar { display: none; }
+    .alt-chip.dim {
+      opacity: 0.45;
     }
     .alt-chip {
       display: flex;
@@ -922,7 +982,10 @@
       <span class="app-eyebrow">16-day outlook</span>
       <span class="app-title">Weather Window</span>
     </div>
-    <button class="btn-icon-sm" id="btn-refresh" title="Refresh forecast">↻</button>
+    <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn-icon-sm" id="btn-theme" title="Toggle theme" onclick="toggleTheme()">☽</button>
+      <button class="btn-icon-sm" id="btn-refresh" title="Refresh forecast">↻</button>
+    </div>
   </header>
 
   <div id="status-bar">
@@ -1106,8 +1169,9 @@ let S = {
   tasks:     [],
   forecasts: {},
   outcomes:  [],
-  results:   {},   // taskId → { windows: [...], _cooldown: bool }
+  results:   {},   // taskId → { windows: [...], _cooldown: bool, allDayScores: {} }
   sel:       {},   // taskId → selected window index
+  winHour:   {},   // taskId → manually dragged start hour (null = use optimal)
   view:      'home',
   loading:   false,
 };
@@ -1119,6 +1183,7 @@ function save() {
   localStorage.setItem('ww_fc',    JSON.stringify(S.forecasts));
   localStorage.setItem('ww_out',   JSON.stringify(S.outcomes));
   localStorage.setItem('ww_sel',   JSON.stringify(S.sel));
+  localStorage.setItem('ww_wh',    JSON.stringify(S.winHour));
 }
 function load() {
   S.locs      = JSON.parse(localStorage.getItem('ww_locs')  || '[]');
@@ -1126,6 +1191,7 @@ function load() {
   S.forecasts = JSON.parse(localStorage.getItem('ww_fc')    || '{}');
   S.outcomes  = JSON.parse(localStorage.getItem('ww_out')   || '[]');
   S.sel       = JSON.parse(localStorage.getItem('ww_sel')   || '{}');
+  S.winHour   = JSON.parse(localStorage.getItem('ww_wh')    || '{}');
 }
 
 // ── Profile ───────────────────────────────────────
@@ -1167,15 +1233,18 @@ function buildWindowObj(fc, scores, s, e, minDur, p) {
   const ds = fc.times.findIndex(t => t.startsWith(winDay));
   const de = Math.min(ds + 24, fc.times.length);
   const strip = [];
+  const dayHourScores = [];
   for (let i = ds; i < de; i++) {
     let cls = 'night';
-    const sc = scores[i];
+    const sc = scores[i] ?? -1;
     if (sc > 0) cls = sc >= 70 ? 'good' : sc >= 35 ? 'mar' : 'rain';
-    else if (fc.precip[i] > 0) cls = 'rain';
-    strip.push({ cls, win: i >= s && i <= e });
+    else if ((fc.precip[i] ?? 0) > 0) cls = 'rain';
+    strip.push({ cls });
+    dayHourScores.push(sc);
   }
   const wStart = new Date(fc.times[s]);
   const wEnd   = new Date(fc.times[e]); wEnd.setHours(wEnd.getHours() + 1);
+  const optimalStartHour = wStart.getHours();
   const sl = fc.precip.slice(s, e+1), wl = fc.wind.slice(s, e+1), tl = fc.temp.slice(s, e+1);
   const maxP = Math.max(...sl), maxW = Math.max(...wl);
   const avgT = tl.reduce((a,b)=>a+b,0)/tl.length;
@@ -1198,7 +1267,7 @@ function buildWindowObj(fc, scores, s, e, minDur, p) {
   parts.push(`${Math.round(avgT)}°C`);
   if (maxUV !== null && maxUV >= 3) parts.push(`UV ${maxUV.toFixed(0)}`);
 
-  return { score: Math.round(avg), wStart, wEnd, strip, winDay, reason: parts.join(' · '), maxUV, windCompass };
+  return { score: Math.round(avg), wStart, wEnd, strip, winDay, reason: parts.join(' · '), maxUV, windCompass, dayHourScores, optimalStartHour };
 }
 
 function findWindows(task, fc, maxResults = 5) {
@@ -1242,8 +1311,16 @@ function findWindows(task, fc, maxResults = 5) {
     i = j;
   }
 
+  // Collect best-hour score per day regardless of duration (for all-day chips)
+  const allDayScores = {};
+  for (let i = 0; i < fc.times.length; i++) {
+    if (scores[i] <= 0) continue;
+    const day = fc.times[i].slice(0, 10);
+    if (allDayScores[day] == null || scores[i] > allDayScores[day]) allDayScores[day] = scores[i];
+  }
+
   const days = Object.keys(byDay);
-  if (!days.length) return null;
+  if (!days.length) return { windows: null, allDayScores };
 
   // Sort: soonest-first for days within 2pts of the overall best score;
   // remaining days sorted by score descending. (Brief tiebreak rule.)
@@ -1256,10 +1333,11 @@ function findWindows(task, fc, maxResults = 5) {
     return db.avg - da.avg;
   });
 
-  return days.slice(0, maxResults).map(day => {
+  const windows = days.slice(0, maxResults).map(day => {
     const { s, e } = byDay[day];
     return buildWindowObj(fc, scores, s, e, minDur, p);
   });
+  return { windows, allDayScores };
 }
 
 // ── Forecast ──────────────────────────────────────
@@ -1301,24 +1379,40 @@ async function refresh() {
 // ── Match ─────────────────────────────────────────
 function match() {
   for (const task of S.tasks) {
-    const windows = findWindows(task, S.forecasts[task.locId]);
+    const result = findWindows(task, S.forecasts[task.locId]);
     const cooldown = !!(task.recurring && task.lastDone &&
       (Date.now()-task.lastDone)/86400000 < (task.interval||7));
-    S.results[task.id] = windows ? { windows, _cooldown: cooldown } : null;
-    // Clamp saved selection if windows shrank
-    if (windows && S.sel[task.id] >= windows.length) S.sel[task.id] = 0;
+    if (!result) {
+      S.results[task.id] = null;
+    } else {
+      const { windows, allDayScores } = result;
+      S.results[task.id] = { windows: windows || [], _cooldown: cooldown, allDayScores };
+      if (windows && S.sel[task.id] >= windows.length) S.sel[task.id] = 0;
+    }
   }
 }
 
-// Active window for a task (respects user selection)
+// Active window for a task (respects user selection and manual hour drag)
 function getWin(taskId) {
   const r = S.results[taskId];
   if (!r || r._cooldown || !r.windows?.length) return null;
-  return r.windows[S.sel[taskId] || 0];
+  const w = r.windows[S.sel[taskId] || 0];
+  if (!w) return null;
+  const manualHour = S.winHour[taskId];
+  if (manualHour == null || !w.dayHourScores) return w;
+  const task = S.tasks.find(t => t.id === taskId);
+  const dur = prof(task).dur;
+  const start = Math.max(0, Math.min(24 - dur, manualHour));
+  const slice = w.dayHourScores.slice(start, start + dur);
+  const avgScore = Math.round(slice.reduce((a, b) => a + Math.max(0, b), 0) / Math.max(1, dur));
+  const newWStart = new Date(w.wStart); newWStart.setHours(start, 0, 0, 0);
+  const newWEnd = new Date(newWStart); newWEnd.setHours(start + dur, 0, 0, 0);
+  return { ...w, score: avgScore, wStart: newWStart, wEnd: newWEnd, manualHour: start };
 }
 
 function selectWin(taskId, idx) {
   S.sel[taskId] = idx;
+  S.winHour[taskId] = null; // reset manual drag when switching day
   save();
   renderCards();
 }
@@ -1465,38 +1559,48 @@ function renderCards() {
       body = `<p class="card-muted">On cooldown — check back in ~${dLeft} day${dLeft!==1?'s':''}.</p>
               <div class="card-reason" style="margin:0"><span class="card-location-tag">${locLabel(task.locId)}</span></div>`;
     } else if (w) {
-      const strip = w.strip.map(h=>`<div class="s-hr ${h.cls}${h.win?' win':''}"></div>`).join('');
+      const manualHour = S.winHour[task.id];
+      const dur = prof(task).dur;
+      const winStart = manualHour != null ? manualHour : w.optimalStartHour;
+      const stripHtml = w.strip.map((h, i) =>
+        `<div class="s-hr ${h.cls}${i >= winStart && i < winStart + dur ? ' win' : ''}"></div>`
+      ).join('');
       const dayStr = new Date(w.wStart).toLocaleDateString('en',{weekday:'long',day:'numeric',month:'short'});
+      const fh = dd => { let h=new Date(dd).getHours(); const p=h>=12?'pm':'am'; h=h%12||12; return `${h}${p}`; };
 
-      // Alternative window chips (other days)
-      const alts = r.windows.length > 1 ? `
-        <div class="alts">
-          <span class="alts-label">Other options</span>
-          <div class="alts-row">
-            ${r.windows.map((ow, idx) => {
-              const isActive = idx === sel;
-              const d = new Date(ow.wStart);
-              const dayName = idx===0&&sel===0?'Today'
-                : (d - new Date()) < 86400000*1 ? 'Today'
-                : (d - new Date()) < 86400000*2 ? 'Tomorrow'
-                : d.toLocaleDateString('en',{weekday:'short',day:'numeric',month:'short'});
-              const fh = dd => { let h=dd.getHours(); const p=h>=12?'pm':'am'; h=h%12||12; return `${h}${p}`; };
-              return `<button class="alt-chip${isActive?' active':''}" onclick="selectWin('${task.id}',${idx})">
-                <span class="alt-day">${dayName}</span>
-                <span class="alt-time">${fh(d)}</span>
-                <span class="alt-score ${bandClass(ow.score)}">${ow.score}</span>
-              </button>`;
-            }).join('')}
-          </div>
-        </div>` : '';
+      // All 16 days as chips (viable days selectable, rest dimmed)
+      const today = new Date(); today.setHours(0,0,0,0);
+      const allChips = Array.from({length:16}, (_, di) => {
+        const d = new Date(today); d.setDate(today.getDate() + di);
+        const ds = d.toISOString().slice(0,10);
+        const winIdx = r.windows.findIndex(ww => ww.winDay === ds);
+        const isViable = winIdx >= 0;
+        const isActive = isViable && winIdx === sel;
+        const score = isViable ? r.windows[winIdx].score : Math.round(r.allDayScores?.[ds] || 0);
+        const dayName = di === 0 ? 'Today' : di === 1 ? 'Tomorrow'
+          : d.toLocaleDateString('en',{weekday:'short',day:'numeric',month:'short'});
+        const timeStr = isViable ? fh(new Date(r.windows[winIdx].wStart)) : '—';
+        const bc = isViable ? bandClass(score) : 'low';
+        const clickHandler = isViable ? `onclick="selectWin('${task.id}',${winIdx})"` : '';
+        return `<button class="alt-chip${isActive?' active':''}${!isViable?' dim':''}" ${clickHandler} ${!isViable?'style="cursor:default"':''}>
+          <span class="alt-day">${dayName}</span>
+          <span class="alt-time">${timeStr}</span>
+          <span class="alt-score ${bc}">${score||'—'}</span>
+        </button>`;
+      }).join('');
 
       body = `
         <div class="card-window-label">Best window</div>
-        <div class="card-window">${fmtWin(w.wStart,w.wEnd)}</div>
+        <div class="card-window" id="win-time-${task.id}">${fmtWin(w.wStart,w.wEnd)}</div>
         <div class="card-reason">${w.reason}<span class="card-location-tag">${locLabel(task.locId)}</span></div>
         <div class="strip-wrap">
           <div class="strip-day-label">${dayStr}</div>
-          <div class="strip">${strip}</div>
+          <div class="strip" id="strip-${task.id}"
+            onpointerdown="stripPointerDown(event,'${task.id}')"
+            onpointermove="stripPointerMove(event,'${task.id}')"
+            onpointerup="stripPointerUp(event,'${task.id}')"
+            onpointercancel="stripPointerUp(event,'${task.id}')"
+          >${stripHtml}</div>
           <div class="strip-ticks">
             <span style="left:0%">12am</span>
             <span style="left:25%">6am</span>
@@ -1504,8 +1608,12 @@ function renderCards() {
             <span style="left:75%">6pm</span>
             <span style="left:100%">12am</span>
           </div>
+          <div class="strip-hint">drag to move window</div>
         </div>
-        ${alts}
+        <div class="alts">
+          <span class="alts-label">All days</span>
+          <div class="alts-row">${allChips}</div>
+        </div>
         <div class="card-actions">
           <button class="btn-done-sm" onclick="markDone('${task.id}')">✓ Mark done</button>
           <button class="btn-share-sm" onclick="shareWin('${task.id}')">↗ Share</button>
@@ -1538,7 +1646,8 @@ function renderCards() {
           <div class="card-head">
             <span class="task-icon">${task.icon||'☀'}</span>
             <span class="task-name">${task.name}</span>
-            ${w?`<span class="score-pill ${bc}">${w.score}</span>`:''}
+            ${w?`<span class="score-pill ${bc}" id="score-${task.id}">${w.score}</span>`:''}
+            <button class="btn-del" onclick="deleteTaskFromCard('${task.id}')" title="Delete task" style="margin-left:4px">✕</button>
           </div>
           ${body}
           ${accTag(task.id)}
@@ -1840,6 +1949,75 @@ function detectGeo() {
   }, () => alert('Could not get your location'));
 }
 
+// ── Theme ─────────────────────────────────────────
+function toggleTheme() {
+  const next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+}
+function applyTheme(theme) {
+  document.documentElement.setAttribute('data-theme', theme);
+  localStorage.setItem('ww_theme', theme);
+  document.getElementById('btn-theme').textContent = theme === 'light' ? '☽' : '☀';
+}
+
+// ── Delete from card ──────────────────────────────
+function deleteTaskFromCard(id) {
+  if (!confirm('Remove this task?')) return;
+  S.tasks = S.tasks.filter(t => t.id !== id);
+  delete S.results[id];
+  save(); renderSettings(); renderCards();
+}
+
+// ── Strip drag ────────────────────────────────────
+let _drag = null;
+
+function stripPointerDown(e, taskId) {
+  const w = S.results[taskId]?.windows?.[S.sel[taskId] || 0];
+  if (!w?.dayHourScores) return;
+  _drag = { taskId };
+  e.currentTarget.setPointerCapture(e.pointerId);
+  stripUpdateFromEvent(e, taskId, w);
+}
+
+function stripPointerMove(e, taskId) {
+  if (!_drag || _drag.taskId !== taskId) return;
+  const w = S.results[taskId]?.windows?.[S.sel[taskId] || 0];
+  if (!w?.dayHourScores) return;
+  stripUpdateFromEvent(e, taskId, w);
+}
+
+function stripPointerUp(e, taskId) {
+  if (!_drag || _drag.taskId !== taskId) return;
+  _drag = null;
+  save();
+  renderCards();
+}
+
+function stripUpdateFromEvent(e, taskId, w) {
+  const strip = document.getElementById('strip-' + taskId);
+  if (!strip) return;
+  const rect = strip.getBoundingClientRect();
+  const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const task = S.tasks.find(t => t.id === taskId);
+  const dur = prof(task).dur;
+  const hour = Math.max(0, Math.min(24 - dur, Math.floor(pct * 24)));
+  S.winHour[taskId] = hour;
+  // Update strip highlight in place
+  const blocks = strip.children;
+  for (let i = 0; i < blocks.length; i++) blocks[i].classList.toggle('win', i >= hour && i < hour + dur);
+  // Update score pill and time label in place
+  const slice = w.dayHourScores.slice(hour, hour + dur);
+  const avg = Math.round(slice.reduce((a, b) => a + Math.max(0, b), 0) / Math.max(1, dur));
+  const pill = document.getElementById('score-' + taskId);
+  if (pill) { pill.textContent = avg; pill.className = 'score-pill ' + (avg >= 75 ? 'high' : avg >= 45 ? 'mid' : 'low'); }
+  const timeEl = document.getElementById('win-time-' + taskId);
+  if (timeEl) {
+    const ns = new Date(w.wStart); ns.setHours(hour, 0, 0, 0);
+    const ne = new Date(ns); ne.setHours(hour + dur, 0, 0, 0);
+    timeEl.textContent = fmtWin(ns, ne);
+  }
+}
+
 // ── Done view ─────────────────────────────────────
 function isDone(task) {
   if (!task.lastDone) return false;
@@ -1977,6 +2155,7 @@ function markDone(taskId) {
 
 // ── Boot ──────────────────────────────────────────
 document.getElementById('btn-refresh').addEventListener('click', refresh);
+applyTheme(localStorage.getItem('ww_theme') || 'dark');
 load(); match(); render(); setView('home');
 
 const ffs=Object.values(S.forecasts);
