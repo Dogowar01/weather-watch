@@ -273,34 +273,51 @@
     }
 
     /* ── Hourly strip ───────────────────────── */
-    .strip-wrap { margin-bottom: 2px; }
+    .strip-wrap { margin-bottom: 12px; }
     .strip-day-label {
       font-size: 0.62rem;
       color: var(--ink-3);
       font-family: 'Menlo','Monaco',monospace;
-      margin-bottom: 5px;
+      margin-bottom: 6px;
     }
     .strip {
       display: grid;
       grid-template-columns: repeat(24, 1fr);
-      gap: 2px;
-      height: 20px;
+      gap: 0;
+      height: 48px;
+      border-radius: 10px;
+      overflow: hidden;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.55) inset, 0 0 0 1px rgba(255,255,255,0.05);
     }
     .s-hr {
-      border-radius: 2px;
-      background: var(--bg-3);
+      position: relative;
+      background: rgba(255,255,255,0.025);
     }
-    .s-hr.good  { background: #2A5438; }
-    .s-hr.mar   { background: #4A3C18; }
-    .s-hr.rain  { background: #3A2828; }
-    .s-hr.night { background: var(--bg-2); }
-    .s-hr.win   {
-      box-shadow: 0 0 0 1.5px var(--amber) inset;
-      animation: strip-pulse 3.2s ease-in-out infinite;
+    .s-hr + .s-hr { border-left: 1px solid rgba(0,0,0,0.18); }
+    .s-hr.good  { background: linear-gradient(to bottom, #3E7D55 0%, #1C4230 100%); }
+    .s-hr.mar   { background: linear-gradient(to bottom, #7A6020 0%, #3C2E08 100%); }
+    .s-hr.rain  { background: linear-gradient(to bottom, #7A3535 0%, #3C1C1C 100%); }
+    .s-hr.night { background: rgba(255,255,255,0.02); }
+    .s-hr.win {
+      background: linear-gradient(to bottom, rgba(201,137,78,0.85) 0%, rgba(140,85,25,0.6) 60%, rgba(80,45,10,0.4) 100%) !important;
+      animation: stripe-glow 3.2s ease-in-out infinite;
     }
-    @keyframes strip-pulse {
-      0%,100% { box-shadow: 0 0 0 1.5px var(--amber) inset; opacity: 1; }
-      50%      { box-shadow: 0 0 0 1.5px var(--amber) inset, 0 0 8px rgba(201,137,78,0.7); opacity: 0.85; }
+    @keyframes stripe-glow {
+      0%,100% { box-shadow: 0 0 8px rgba(201,137,78,0.4); }
+      50%      { box-shadow: 0 0 18px rgba(201,137,78,0.8), 0 0 32px rgba(201,137,78,0.3); }
+    }
+    .strip-ticks {
+      position: relative;
+      height: 13px;
+      margin-top: 4px;
+    }
+    .strip-ticks span {
+      position: absolute;
+      transform: translateX(-50%);
+      font-size: 0.5rem;
+      color: var(--ink-3);
+      font-family: 'Menlo','Monaco',monospace;
+      white-space: nowrap;
     }
 
     /* ── Alternative windows ────────────────── */
@@ -1480,6 +1497,13 @@ function renderCards() {
         <div class="strip-wrap">
           <div class="strip-day-label">${dayStr}</div>
           <div class="strip">${strip}</div>
+          <div class="strip-ticks">
+            <span style="left:0%">12am</span>
+            <span style="left:25%">6am</span>
+            <span style="left:50%">noon</span>
+            <span style="left:75%">6pm</span>
+            <span style="left:100%">12am</span>
+          </div>
         </div>
         ${alts}
         <div class="card-actions">
