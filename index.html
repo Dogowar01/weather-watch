@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Weather Window</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;1,9..144,300&display=swap" rel="stylesheet">
+  <meta name="theme-color" content="#0F0F0D">
+  <meta name="description" content="Find the best weather window for your outdoor tasks">
+  <style>
+    :root {
+      --bg: #0F0F0D;
+      --bg-raised: #161614;
+      --bg-card: #1C1C1A;
+      --border: rgba(255,255,255,0.08);
+      --text: #F0EDEA;
+      --text-2: rgba(240,237,234,0.55);
+      --text-3: rgba(240,237,234,0.28);
+      --accent: #C4884A;
+      --accent-dim: rgba(196,136,74,0.12);
+      --green: #5A8F6A;
+      --amber: #C4884A;
+      --red: #8F5A5A;
+      --strip-good: #2E5C3A;
+      --strip-mar: #5C4A1E;
+      --strip-rain: #3A2A2A;
+      --strip-night: #161614;
+      --r: 12px;
+      --r-sm: 6px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html { -webkit-text-size-adjust: 100%; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 15px;
+      line-height: 1.5;
+      min-height: 100dvh;
+    }
+    #app {
+      max-width: 480px;
+      margin: 0 auto;
+      min-height: 100dvh;
+      padding-bottom: 84px;
+    }
+
+    /* ── Header ── */
+    header {
+      padding: 28px 20px 16px;
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--border);
+    }
+    .app-title {
+      font-family: 'Fraunces', Georgia, serif;
+      font-weight: 300;
+      font-size: 1.45rem;
+      letter-spacing: -0.025em;
+    }
+    .btn-ghost {
+      background: none;
+      border: none;
+      color: var(--text-2);
+      padding: 6px 8px;
+      border-radius: var(--r-sm);
+      cursor: pointer;
+      font-size: 1rem;
+      line-height: 1;
+      transition: color .15s;
+    }
+    .btn-ghost:hover { color: var(--text); }
+
+    /* ── Status bar ── */
+    #status-bar {
+      padding: 7px 20px;
+      font-size: 0.72rem;
+      color: var(--text-3);
+      font-family: 'Menlo','Monaco','Consolas',monospace;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      min-height: 30px;
+    }
+    .status-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--text-3);
+      flex-shrink: 0;
+    }
+    .status-dot.live { background: var(--green); }
+    .status-dot.stale { background: var(--amber); }
+
+    /* ── Views ── */
+    .view { display: none; padding: 16px 20px; }
+    .view.active { display: block; }
+
+    /* ── Task cards ── */
+    #cards { display: flex; flex-direction: column; gap: 10px; }
+
+    .task-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+      padding: 16px;
+    }
+    .card-top {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 11px;
+    }
+    .task-icon { font-size: 1.2rem; width: 26px; text-align: center; flex-shrink: 0; }
+    .task-name {
+      font-family: 'Fraunces', Georgia, serif;
+      font-weight: 400;
+      font-size: 1rem;
+      flex: 1;
+      letter-spacing: -0.01em;
+    }
+    .score-badge {
+      font-size: 0.68rem;
+      font-family: 'Menlo','Monaco',monospace;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 20px;
+    }
+    .badge-high { background: rgba(90,143,106,.18); color: #7DC48A; }
+    .badge-mid  { background: rgba(196,136,74,.18); color: #C4884A; }
+    .badge-low  { background: rgba(143,90,90,.18);  color: #C47A7A; }
+    .badge-none { background: rgba(255,255,255,.05); color: var(--text-3); }
+
+    .card-window {
+      font-size: 0.88rem;
+      color: var(--text-2);
+      margin-bottom: 3px;
+    }
+    .card-window strong { color: var(--text); font-weight: 500; }
+    .card-reason {
+      font-size: 0.78rem;
+      color: var(--text-3);
+      margin-bottom: 11px;
+    }
+
+    /* ── Hourly strip ── */
+    .hourly-strip {
+      display: flex;
+      gap: 2px;
+      height: 22px;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .h-block { flex: 1; border-radius: 2px; }
+    .h-block.good  { background: var(--strip-good); }
+    .h-block.mar   { background: var(--strip-mar); }
+    .h-block.rain  { background: var(--strip-rain); }
+    .h-block.night { background: var(--strip-night); }
+    .h-block.win   { outline: 1.5px solid var(--accent); outline-offset: -1px; }
+
+    /* ── Reminder prompt ── */
+    .reminder-prompt {
+      margin-top: 11px;
+      padding: 10px 12px;
+      background: var(--accent-dim);
+      border: 1px solid rgba(196,136,74,.22);
+      border-radius: var(--r-sm);
+      font-size: 0.8rem;
+      color: var(--text-2);
+    }
+    .reminder-prompt p { margin-bottom: 8px; }
+    .reminder-row { display: flex; gap: 7px; }
+    .btn-sm {
+      padding: 5px 13px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      cursor: pointer;
+      border: none;
+      font-family: inherit;
+    }
+    .btn-add  { background: var(--accent); color: #0F0F0D; font-weight: 600; }
+    .btn-dis  { background: rgba(255,255,255,.06); color: var(--text-2); }
+
+    /* ── Outcome prompt ── */
+    .outcome-prompt {
+      margin-top: 9px;
+      padding: 8px 11px;
+      background: rgba(255,255,255,.025);
+      border-radius: var(--r-sm);
+      font-size: 0.76rem;
+      color: var(--text-3);
+    }
+    .outcome-row { display: flex; gap: 5px; margin-top: 6px; flex-wrap: wrap; }
+    .btn-out {
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 0.7rem;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: none;
+      color: var(--text-2);
+      font-family: inherit;
+    }
+
+    /* ── Accuracy tag ── */
+    .acc-tag {
+      display: inline-block;
+      font-size: 0.65rem;
+      font-family: 'Menlo','Monaco',monospace;
+      padding: 2px 7px;
+      border-radius: 10px;
+      background: rgba(255,255,255,.04);
+      color: var(--text-3);
+      margin-top: 7px;
+    }
+
+    /* ── Empty state ── */
+    .empty {
+      padding: 52px 4px;
+      text-align: center;
+    }
+    .empty-title {
+      font-family: 'Fraunces', Georgia, serif;
+      font-weight: 300;
+      font-size: 1.7rem;
+      margin-bottom: 10px;
+      letter-spacing: -0.02em;
+    }
+    .empty p {
+      color: var(--text-2);
+      font-size: 0.88rem;
+      line-height: 1.75;
+      max-width: 300px;
+      margin: 0 auto 20px;
+    }
+
+    /* ── Week view ── */
+    .week-label {
+      font-family: 'Fraunces', Georgia, serif;
+      font-weight: 300;
+      font-size: 1.05rem;
+      color: var(--text-2);
+      margin-bottom: 16px;
+    }
+    .week-rows { display: flex; flex-direction: column; gap: 10px; }
+    .week-row { display: flex; gap: 10px; align-items: flex-start; }
+    .week-day-label {
+      font-size: 0.68rem;
+      color: var(--text-3);
+      font-family: 'Menlo','Monaco',monospace;
+      width: 26px;
+      flex-shrink: 0;
+      text-align: right;
+      padding-top: 2px;
+      line-height: 1.4;
+    }
+    .week-bars { flex: 1; display: flex; flex-direction: column; gap: 4px; }
+    .week-bar-wrap {
+      height: 9px;
+      background: var(--bg-raised);
+      border-radius: 3px;
+      position: relative;
+      overflow: hidden;
+    }
+    .week-bar-fill {
+      position: absolute;
+      top: 0; bottom: 0;
+      border-radius: 3px;
+    }
+    .week-bar-name {
+      font-size: 0.65rem;
+      color: var(--text-3);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .week-empty-row {
+      height: 9px;
+      background: var(--bg-raised);
+      border-radius: 3px;
+      opacity: 0.3;
+    }
+
+    /* ── Settings ── */
+    .settings-section { margin-bottom: 28px; }
+    .section-label {
+      font-size: 0.66rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--text-3);
+      font-family: 'Menlo','Monaco',monospace;
+      margin-bottom: 10px;
+    }
+    .list-row {
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      padding: 11px 13px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 5px;
+    }
+    .list-row-label { font-size: 0.88rem; }
+    .list-row-sub {
+      font-size: 0.7rem;
+      color: var(--text-3);
+      font-family: 'Menlo','Monaco',monospace;
+      margin-top: 2px;
+    }
+    .btn-del {
+      background: none;
+      border: none;
+      color: var(--text-3);
+      cursor: pointer;
+      padding: 4px 6px;
+      font-size: 0.9rem;
+      transition: color .15s;
+    }
+    .btn-del:hover { color: #C47A7A; }
+    .btn-outline {
+      padding: 8px 15px;
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      color: var(--text-2);
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color .15s, color .15s;
+    }
+    .btn-outline:hover { border-color: var(--accent); color: var(--text); }
+
+    /* ── Bottom nav ── */
+    #bottom-nav {
+      position: fixed;
+      bottom: 0;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 100%;
+      max-width: 480px;
+      background: rgba(15,15,13,.94);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border-top: 1px solid var(--border);
+      display: flex;
+      padding: 8px 12px 20px;
+      gap: 2px;
+    }
+    .nav-btn {
+      flex: 1;
+      background: none;
+      border: none;
+      color: var(--text-3);
+      padding: 7px 4px;
+      cursor: pointer;
+      border-radius: var(--r-sm);
+      font-size: 0.7rem;
+      font-family: inherit;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      transition: color .15s;
+    }
+    .nav-btn .ni { font-size: 1.15rem; }
+    .nav-btn.active { color: var(--text); }
+    .nav-add {
+      background: var(--accent);
+      color: #0F0F0D;
+      font-weight: 600;
+      border-radius: var(--r-sm);
+    }
+    .nav-add:hover { opacity: .85; }
+
+    /* ── Modal ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.72);
+      z-index: 200;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      display: none;
+      background: var(--bg-raised);
+      border-radius: var(--r) var(--r) 0 0;
+      padding: 24px 20px 44px;
+      width: 100%;
+      max-width: 480px;
+      max-height: 88vh;
+      overflow-y: auto;
+    }
+    .modal.open { display: block; }
+    .modal-title {
+      font-family: 'Fraunces', Georgia, serif;
+      font-weight: 300;
+      font-size: 1.2rem;
+      margin-bottom: 20px;
+      letter-spacing: -0.02em;
+    }
+    .form-group { margin-bottom: 15px; }
+    .form-label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--text-2);
+      margin-bottom: 5px;
+    }
+    .form-input, .form-select {
+      width: 100%;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      color: var(--text);
+      padding: 10px 11px;
+      font-size: 0.88rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .15s;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+    .form-input:focus, .form-select:focus { border-color: var(--accent); }
+    .form-hint {
+      font-size: 0.72rem;
+      color: var(--text-3);
+      margin-top: 4px;
+    }
+
+    /* Icon picker */
+    .icon-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+    }
+    .icon-opt {
+      width: 40px; height: 40px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.25rem;
+      border-radius: var(--r-sm);
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--bg-card);
+      transition: border-color .12s;
+    }
+    .icon-opt.sel { border-color: var(--accent); background: var(--accent-dim); }
+
+    /* Toggle */
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 0;
+    }
+    .toggle-label { font-size: 0.88rem; }
+    .toggle {
+      width: 40px; height: 22px;
+      border-radius: 11px;
+      background: var(--border);
+      border: none;
+      cursor: pointer;
+      position: relative;
+      transition: background .2s;
+      flex-shrink: 0;
+    }
+    .toggle.on { background: var(--accent); }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      top: 2px; left: 2px;
+      width: 18px; height: 18px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform .2s;
+    }
+    .toggle.on::after { transform: translateX(18px); }
+
+    /* Primary / secondary buttons */
+    .btn-primary {
+      width: 100%;
+      padding: 12px;
+      background: var(--accent);
+      color: #0F0F0D;
+      border: none;
+      border-radius: var(--r-sm);
+      font-size: 0.9rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      margin-top: 10px;
+    }
+    .btn-primary:hover { opacity: .85; }
+    .btn-secondary {
+      width: 100%;
+      padding: 11px;
+      background: none;
+      color: var(--text-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-sm);
+      font-size: 0.88rem;
+      font-family: inherit;
+      cursor: pointer;
+      margin-top: 7px;
+    }
+
+    /* Loading spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      width: 13px; height: 13px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <span class="app-title">Weather Window</span>
+    <button class="btn-ghost" id="btn-refresh" title="Refresh forecast">↻</button>
+  </header>
+
+  <div id="status-bar">
+    <div class="status-dot" id="status-dot"></div>
+    <span id="status-text">—</span>
+  </div>
+
+  <!-- Home view -->
+  <div class="view active" id="view-home">
+    <div id="cards" style="padding-top:4px"></div>
+  </div>
+
+  <!-- Week view -->
+  <div class="view" id="view-week">
+    <div class="week-label">This week</div>
+    <div class="week-rows" id="week-rows"></div>
+  </div>
+
+  <!-- Settings view -->
+  <div class="view" id="view-settings">
+    <div class="settings-section">
+      <div class="section-label">Locations</div>
+      <div id="loc-list"></div>
+      <button class="btn-outline" onclick="openModal('loc')">+ Add location</button>
+    </div>
+    <div class="settings-section">
+      <div class="section-label">Tasks</div>
+      <div id="task-settings-list"></div>
+      <button class="btn-outline" onclick="openModal('task')">+ Add task</button>
+    </div>
+    <div class="settings-section">
+      <div class="section-label">Data</div>
+      <button class="btn-outline" onclick="clearData()" style="border-color:rgba(143,90,90,.3);color:var(--text-3)">Clear all data</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom nav -->
+<nav id="bottom-nav">
+  <button class="nav-btn active" id="nav-home" onclick="setView('home')">
+    <span class="ni">☀</span>Tasks
+  </button>
+  <button class="nav-btn" id="nav-week" onclick="setView('week')">
+    <span class="ni">⊟</span>Week
+  </button>
+  <button class="nav-btn nav-add" onclick="openModal('task')">
+    <span class="ni">+</span>Add task
+  </button>
+  <button class="nav-btn" id="nav-settings" onclick="setView('settings')">
+    <span class="ni">◎</span>Settings
+  </button>
+</nav>
+
+<!-- Modals -->
+<div class="modal-overlay" id="overlay" onclick="overlayClick(event)">
+
+  <!-- Add task modal -->
+  <div class="modal" id="modal-task">
+    <div class="modal-title">New task</div>
+    <div class="form-group">
+      <label class="form-label">Task name</label>
+      <input id="t-name" class="form-input" type="text" placeholder="e.g. Paint the fence" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Icon</label>
+      <div class="icon-grid" id="icon-grid"></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Weather profile</label>
+      <select id="t-profile" class="form-select" onchange="profileChanged()">
+        <option value="dry_calm">Dry &amp; calm — painting, spraying (≤10 km/h wind, 3h)</option>
+        <option value="dry_only">Dry only — mowing, washing (1h)</option>
+        <option value="warm_dry">Warm &amp; dry — dining, events (≥14°C, 2h)</option>
+        <option value="custom">Custom</option>
+      </select>
+    </div>
+    <div id="custom-block" style="display:none">
+      <div class="form-group">
+        <label class="form-label">Max wind speed (km/h) — blank to ignore</label>
+        <input id="t-wind" class="form-input" type="number" min="0" max="200" placeholder="25">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Min temperature °C — blank to ignore</label>
+        <input id="t-tmin" class="form-input" type="number" placeholder="12">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Max temperature °C — blank to ignore</label>
+        <input id="t-tmax" class="form-input" type="number" placeholder="38">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Minimum duration (hours)</label>
+      <input id="t-dur" class="form-input" type="number" min="1" max="12" value="3">
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Requires daylight</span>
+      <button class="toggle" id="tog-day" onclick="this.classList.toggle('on')"></button>
+    </div>
+    <div class="toggle-row">
+      <span class="toggle-label">Recurring task</span>
+      <button class="toggle" id="tog-rec" onclick="this.classList.toggle('on');toggleRecurring()"></button>
+    </div>
+    <div id="recur-block" style="display:none" class="form-group">
+      <label class="form-label">Minimum days between completions</label>
+      <input id="t-interval" class="form-input" type="number" min="1" value="7">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Location</label>
+      <select id="t-loc" class="form-select"></select>
+    </div>
+    <button class="btn-primary" onclick="saveTask()">Save task</button>
+    <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+  </div>
+
+  <!-- Add location modal -->
+  <div class="modal" id="modal-loc">
+    <div class="modal-title">Add location</div>
+    <div class="form-group">
+      <label class="form-label">Label</label>
+      <input id="l-name" class="form-input" type="text" placeholder="Home, Market site, …" autocomplete="off">
+    </div>
+    <p class="form-hint" style="margin-bottom:12px">
+      Enter coordinates below, or
+      <button onclick="detectGeo()" style="background:none;border:none;color:var(--accent);cursor:pointer;font-size:inherit;padding:0;text-decoration:underline">use current location</button>
+    </p>
+    <div class="form-group">
+      <label class="form-label">Latitude</label>
+      <input id="l-lat" class="form-input" type="number" step="any" placeholder="-41.4332">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Longitude</label>
+      <input id="l-lng" class="form-input" type="number" step="any" placeholder="147.1441">
+    </div>
+    <button class="btn-primary" onclick="saveLocation()">Save location</button>
+    <button class="btn-secondary" onclick="closeModal()">Cancel</button>
+  </div>
+
+</div>
+
+<script>
+// ──────────────────────────────────────────────────────
+// Constants
+// ──────────────────────────────────────────────────────
+const ICONS = ['🖌️','✂️','🚗','🌿','💧','🏡','🛖','🧺','🌾','🐾','🎪','⚽','🪴','🏗️','🌻','🪟','🧹','🚿'];
+
+const PROFILES = {
+  dry_calm: { maxWind: 10,   minTemp: null, maxTemp: null, defaultDur: 3,  rainTol: 0 },
+  dry_only: { maxWind: null, minTemp: null, maxTemp: null, defaultDur: 1,  rainTol: 0 },
+  warm_dry: { maxWind: 20,   minTemp: 14,   maxTemp: 38,   defaultDur: 2,  rainTol: 0 },
+  custom:   null
+};
+
+// ──────────────────────────────────────────────────────
+// State
+// ──────────────────────────────────────────────────────
+let S = {
+  locations: [],
+  tasks:     [],
+  forecasts: {},   // locId → {fetchedAt, times, precip, wind, temp, dailyTimes, sunrises, sunsets}
+  outcomes:  [],   // {taskId, didDo, weatherHeld, at}
+  results:   {},   // taskId → match result | null
+  view: 'home',
+  loading: false
+};
+
+// ──────────────────────────────────────────────────────
+// Persistence
+// ──────────────────────────────────────────────────────
+function persist() {
+  localStorage.setItem('ww2_locs',      JSON.stringify(S.locations));
+  localStorage.setItem('ww2_tasks',     JSON.stringify(S.tasks));
+  localStorage.setItem('ww2_forecasts', JSON.stringify(S.forecasts));
+  localStorage.setItem('ww2_outcomes',  JSON.stringify(S.outcomes));
+}
+
+function hydrate() {
+  S.locations = JSON.parse(localStorage.getItem('ww2_locs')      || '[]');
+  S.tasks     = JSON.parse(localStorage.getItem('ww2_tasks')     || '[]');
+  S.forecasts = JSON.parse(localStorage.getItem('ww2_forecasts') || '{}');
+  S.outcomes  = JSON.parse(localStorage.getItem('ww2_outcomes')  || '[]');
+}
+
+// ──────────────────────────────────────────────────────
+// Profile helper
+// ──────────────────────────────────────────────────────
+function getProfile(task) {
+  if (task.profile === 'custom') {
+    return {
+      maxWind:    task.custom?.maxWind ?? null,
+      minTemp:    task.custom?.minTemp ?? null,
+      maxTemp:    task.custom?.maxTemp ?? null,
+      defaultDur: task.dur,
+      rainTol:    0
+    };
+  }
+  return PROFILES[task.profile] || PROFILES.dry_only;
+}
+
+// ──────────────────────────────────────────────────────
+// Scoring
+// ──────────────────────────────────────────────────────
+function scoreHour(precip, wind, temp, profile) {
+  if (profile.rainTol === 0 && precip > 0) return 0;
+  let s = 100;
+  if (precip > profile.rainTol) s -= Math.min(50, (precip - profile.rainTol) * 1.2);
+  if (profile.maxWind !== null) {
+    if (wind > profile.maxWind) s -= Math.min(40, (wind - profile.maxWind) * 2.2);
+    else if (wind < profile.maxWind * 0.4) s += 4;
+  }
+  if (profile.minTemp !== null && temp < profile.minTemp) s -= Math.min(30, (profile.minTemp - temp) * 3.5);
+  if (profile.maxTemp !== null && temp > profile.maxTemp) s -= Math.min(20, (temp - profile.maxTemp) * 2);
+  return Math.max(0, Math.min(100, s));
+}
+
+function findWindow(task, forecast) {
+  if (!forecast) return null;
+  const { times, precip, wind, temp, dailyTimes, sunrises, sunsets } = forecast;
+  const profile = getProfile(task);
+  const minDur  = task.dur || profile.defaultDur || 2;
+  const now     = Date.now();
+  const scores  = [];
+
+  for (let i = 0; i < times.length; i++) {
+    const t = new Date(times[i]).getTime();
+    if (t < now - 3600000) { scores.push(-1); continue; }
+    if (task.daylight) {
+      const ds = times[i].substring(0, 10);
+      const di = dailyTimes ? dailyTimes.indexOf(ds) : -1;
+      if (di >= 0) {
+        const sr = new Date(sunrises[di]).getTime();
+        const ss = new Date(sunsets[di]).getTime();
+        if (t < sr || t > ss) { scores.push(-1); continue; }
+      }
+    }
+    scores.push(scoreHour(precip[i] ?? 0, wind[i] ?? 0, temp[i] ?? 15, profile));
+  }
+
+  let best = null, bestScore = -1;
+  let i = 0;
+  while (i < scores.length) {
+    if (scores[i] <= 0) { i++; continue; }
+    let j = i;
+    while (j < scores.length && scores[j] > 0) j++;
+    if (j - i >= minDur) {
+      for (let k = i; k <= j - minDur; k++) {
+        let sum = 0;
+        for (let m = k; m < k + minDur; m++) sum += scores[m];
+        const avg = sum / minDur;
+        if (avg > bestScore) { bestScore = avg; best = { s: k, e: k + minDur - 1 }; }
+      }
+    }
+    i = j;
+  }
+
+  if (!best) return null;
+
+  const winDay  = times[best.s].substring(0, 10);
+  const dayS    = times.findIndex(t => t.startsWith(winDay));
+  const dayE    = Math.min(dayS + 24, times.length);
+  const strip   = [];
+  for (let i = dayS; i < dayE; i++) {
+    let cls = 'night';
+    const s = scores[i];
+    if (s > 0)       cls = s >= 70 ? 'good' : s >= 35 ? 'mar' : 'rain';
+    else if (precip[i] > 0) cls = 'rain';
+    strip.push({ cls, win: i >= best.s && i <= best.e });
+  }
+
+  const wStart = new Date(times[best.s]);
+  const wEnd   = new Date(times[best.e]);
+  wEnd.setHours(wEnd.getHours() + 1);
+
+  const sliceP  = precip.slice(best.s, best.e + 1);
+  const sliceW  = wind.slice(best.s, best.e + 1);
+  const sliceT  = temp.slice(best.s, best.e + 1);
+  const maxP    = Math.max(...sliceP);
+  const maxW    = Math.max(...sliceW);
+  const avgT    = sliceT.reduce((a,b) => a+b, 0) / sliceT.length;
+  const parts   = [];
+  if (maxP === 0) parts.push(`${minDur}h dry`);
+  else parts.push(`${Math.round(100 - maxP)}% dry`);
+  if (profile.maxWind !== null) parts.push(`wind ${Math.round(maxW)} km/h`);
+  parts.push(`${Math.round(avgT)}°C`);
+
+  return { score: Math.round(bestScore), wStart, wEnd, strip, reasoning: parts.join(', ') };
+}
+
+// ──────────────────────────────────────────────────────
+// Forecast fetch
+// ──────────────────────────────────────────────────────
+async function fetchForecast(loc) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${loc.lat}&longitude=${loc.lng}`
+    + `&hourly=precipitation_probability,wind_speed_10m,temperature_2m`
+    + `&daily=sunrise,sunset&forecast_days=16&timezone=auto`;
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  const d = await r.json();
+  return {
+    fetchedAt:  Date.now(),
+    times:      d.hourly.time,
+    precip:     d.hourly.precipitation_probability,
+    wind:       d.hourly.wind_speed_10m,
+    temp:       d.hourly.temperature_2m,
+    dailyTimes: d.daily.time,
+    sunrises:   d.daily.sunrise,
+    sunsets:    d.daily.sunset
+  };
+}
+
+async function refresh() {
+  if (!S.locations.length) return;
+  S.loading = true;
+  renderStatus();
+  for (const loc of S.locations) {
+    try {
+      S.forecasts[loc.id] = await fetchForecast(loc);
+      persist();
+    } catch(e) {
+      console.warn('Forecast failed for', loc.label, e);
+    }
+  }
+  S.loading = false;
+  match();
+  render();
+}
+
+// ──────────────────────────────────────────────────────
+// Matching
+// ──────────────────────────────────────────────────────
+function match() {
+  S.results = {};
+  for (const task of S.tasks) {
+    const r = findWindow(task, S.forecasts[task.locId]);
+    if (r && task.recurring && task.lastDone) {
+      const daysSince = (Date.now() - task.lastDone) / 86400000;
+      if (daysSince < (task.interval || 7)) r._cooldown = true;
+    }
+    S.results[task.id] = r;
+  }
+}
+
+// ──────────────────────────────────────────────────────
+// Formatting
+// ──────────────────────────────────────────────────────
+function fmtWindow(s, e) {
+  const DAY = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+  const now  = new Date();
+  const sd   = new Date(s);
+  const ed   = new Date(e);
+  const diff = (sd - now) / 86400000;
+  const day  = diff < 1 ? 'Today' : diff < 2 ? 'Tomorrow' : DAY[sd.getDay()];
+  const fh   = d => { let h = d.getHours(); const p = h>=12?'pm':'am'; h=h%12||12; return `${h}${p}`; };
+  return `${day}, ${fh(sd)}–${fh(ed)}`;
+}
+
+function badgeClass(score) {
+  if (score === null || score === undefined) return 'badge-none';
+  return score >= 75 ? 'badge-high' : score >= 45 ? 'badge-mid' : 'badge-low';
+}
+
+function locLabel(locId) {
+  return S.locations.find(l => l.id === locId)?.label || '—';
+}
+
+// ──────────────────────────────────────────────────────
+// Reminder logic
+// ──────────────────────────────────────────────────────
+function showReminder(task, result) {
+  if (!result || result._cooldown || result.score < 90) return false;
+  const prev = task.lastSug;
+  if (!prev) return true;
+  if (prev.dismissed) {
+    const scoreDiff = Math.abs(result.score - prev.score);
+    const sameDay   = new Date(prev.wStart).toDateString() === new Date(result.wStart).toDateString();
+    if (scoreDiff <= 2 && sameDay) return false;
+    return true;
+  }
+  return false;
+}
+
+function hasPastWindow(task) {
+  const s = task.lastSug;
+  return s && !s.outcomeLogged && new Date(s.wEnd) < new Date();
+}
+
+// ──────────────────────────────────────────────────────
+// ICS generation
+// ──────────────────────────────────────────────────────
+function genICS(task, result) {
+  const fmt = d => d.toISOString().replace(/[-:.]/g,'').slice(0,-4)+'Z';
+  const ics = [
+    'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Weather Window//EN',
+    'BEGIN:VEVENT',
+    `DTSTART:${fmt(new Date(result.wStart))}`,
+    `DTEND:${fmt(new Date(result.wEnd))}`,
+    `SUMMARY:${task.name}`,
+    `DESCRIPTION:Weather Window: ${result.reasoning}`,
+    'END:VEVENT','END:VCALENDAR'
+  ].join('\r\n');
+  const a = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(new Blob([ics], { type: 'text/calendar' })),
+    download: `${task.name.replace(/\s+/g,'-')}.ics`
+  });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+}
+
+// ──────────────────────────────────────────────────────
+// Actions
+// ──────────────────────────────────────────────────────
+function addReminder(taskId) {
+  const task   = S.tasks.find(t => t.id === taskId);
+  const result = S.results[taskId];
+  if (!task || !result) return;
+  genICS(task, result);
+  task.lastSug = { wStart: result.wStart, wEnd: result.wEnd, score: result.score, dismissed: false, outcomeLogged: false };
+  persist();
+  renderCards();
+}
+
+function dismissReminder(taskId) {
+  const task   = S.tasks.find(t => t.id === taskId);
+  const result = S.results[taskId];
+  if (!task || !result) return;
+  task.lastSug = { wStart: result.wStart, wEnd: result.wEnd, score: result.score, dismissed: true, outcomeLogged: false };
+  persist();
+  renderCards();
+}
+
+function logOutcome(taskId, didDo, held) {
+  const task = S.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  S.outcomes.push({ taskId, didDo, held, at: Date.now() });
+  if (task.lastSug) task.lastSug.outcomeLogged = true;
+  if (didDo) task.lastDone = Date.now();
+  persist();
+  renderCards();
+}
+
+function accTag(taskId) {
+  const done = S.outcomes.filter(o => o.taskId === taskId && o.didDo);
+  if (done.length < 2) return '';
+  const pct = Math.round(done.filter(o => o.held).length / done.length * 100);
+  return `<span class="acc-tag">${pct}% accurate · ${done.length} logs</span>`;
+}
+
+// ──────────────────────────────────────────────────────
+// Render
+// ──────────────────────────────────────────────────────
+function render() { renderCards(); renderWeek(); renderSettings(); renderStatus(); }
+
+function renderCards() {
+  const el = document.getElementById('cards');
+  if (!el) return;
+
+  if (!S.tasks.length) {
+    el.innerHTML = `<div class="empty">
+      <div class="empty-title">No tasks yet</div>
+      <p>Add an outdoor task — painting, mowing, washing the car — and Weather Window will find the best window in the next 16 days.</p>
+      <button class="btn-outline" onclick="openModal('task')">Add first task</button>
+    </div>`;
+    return;
+  }
+  if (!S.locations.length) {
+    el.innerHTML = `<div class="empty">
+      <div class="empty-title">No location</div>
+      <p>Add a location so Weather Window knows where to look.</p>
+      <button class="btn-outline" onclick="openModal('loc')">Add location</button>
+    </div>`;
+    return;
+  }
+
+  const sorted = [...S.tasks].sort((a,b) => {
+    const ra = S.results[a.id], rb = S.results[b.id];
+    if (!ra && !rb) return 0; if (!ra) return 1; if (!rb) return -1;
+    return new Date(ra.wStart) - new Date(rb.wStart);
+  });
+
+  el.innerHTML = sorted.map(task => {
+    const r = S.results[task.id];
+    const reminderOn = showReminder(task, r);
+    const pastWin    = hasPastWindow(task);
+
+    let main = '';
+    if (r && !r._cooldown) {
+      const strip = r.strip.map(h =>
+        `<div class="h-block ${h.cls}${h.win?' win':''}"></div>`
+      ).join('');
+      main = `
+        <div class="card-window"><strong>${fmtWindow(r.wStart, r.wEnd)}</strong></div>
+        <div class="card-reason">${r.reasoning} · ${locLabel(task.locId)}</div>
+        <div class="hourly-strip">${strip}</div>`;
+    } else if (r?._cooldown) {
+      const daysLeft = Math.ceil((task.interval||7) - (Date.now()-task.lastDone)/86400000);
+      main = `<div class="card-reason">On cooldown — try again in ~${daysLeft} day${daysLeft!==1?'s':''}. · ${locLabel(task.locId)}</div>`;
+    } else {
+      main = `<div class="card-reason" style="color:var(--text-3)">No suitable window in the next 16 days · ${locLabel(task.locId)}</div>`;
+    }
+
+    const reminderHtml = reminderOn ? `
+      <div class="reminder-prompt">
+        <p>${fmtWindow(r.wStart, r.wEnd).split(',')[0]} looks ideal — add a reminder?</p>
+        <div class="reminder-row">
+          <button class="btn-sm btn-add" onclick="addReminder('${task.id}')">Add to calendar</button>
+          <button class="btn-sm btn-dis" onclick="dismissReminder('${task.id}')">Dismiss</button>
+        </div>
+      </div>` : '';
+
+    const outcomeHtml = pastWin ? `
+      <div class="outcome-prompt">Did you do it — and did the weather hold?
+        <div class="outcome-row">
+          <button class="btn-out" onclick="logOutcome('${task.id}',true,true)">Done, held ✓</button>
+          <button class="btn-out" onclick="logOutcome('${task.id}',true,false)">Done, off</button>
+          <button class="btn-out" onclick="logOutcome('${task.id}',false,false)">Skipped</button>
+        </div>
+      </div>` : '';
+
+    return `<div class="task-card">
+      <div class="card-top">
+        <span class="task-icon">${task.icon||'☀'}</span>
+        <span class="task-name">${task.name}</span>
+        ${r && !r._cooldown ? `<span class="score-badge ${badgeClass(r.score)}">${r.score}</span>` : ''}
+      </div>
+      ${main}
+      ${reminderHtml}
+      ${outcomeHtml}
+      ${accTag(task.id)}
+    </div>`;
+  }).join('');
+}
+
+function renderWeek() {
+  const el = document.getElementById('week-rows');
+  if (!el) return;
+  if (!S.tasks.length || !S.locations.length) {
+    el.innerHTML = '<p style="color:var(--text-3);font-size:.85rem">Add tasks to see the week overview.</p>';
+    return;
+  }
+  const today = new Date(); today.setHours(0,0,0,0);
+  const DAY   = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+  el.innerHTML = Array.from({length:7}, (_,i) => {
+    const d   = new Date(today); d.setDate(today.getDate()+i);
+    const ds  = d.toISOString().substring(0,10);
+    const hits = S.tasks.map(task => {
+      const r = S.results[task.id];
+      if (!r || r._cooldown) return null;
+      if (new Date(r.wStart).toISOString().substring(0,10) !== ds) return null;
+      return { task, r };
+    }).filter(Boolean);
+
+    const bars = hits.length ? hits.map(({task,r}) => {
+      const ws   = new Date(r.wStart), we = new Date(r.wEnd);
+      const base = new Date(ws); base.setHours(0,0,0,0);
+      const left  = ((ws - base) / 864000).toFixed(1);
+      const width = Math.min(((we - ws) / 864000), 100 - parseFloat(left)).toFixed(1);
+      const color = r.score >= 75 ? '#3D6B4A' : r.score >= 45 ? '#7A6030' : '#6B3D3D';
+      return `<div><div class="week-bar-wrap">
+        <div class="week-bar-fill" style="left:${left}%;width:${width}%;background:${color}"></div>
+      </div>
+      <div class="week-bar-name">${task.icon} ${task.name}</div></div>`;
+    }).join('') : `<div class="week-empty-row"></div>`;
+
+    return `<div class="week-row">
+      <div class="week-day-label">${DAY[d.getDay()]}<br>${d.getDate()}</div>
+      <div class="week-bars">${bars}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderSettings() {
+  const ll = document.getElementById('loc-list');
+  const tl = document.getElementById('task-settings-list');
+  if (!ll || !tl) return;
+
+  ll.innerHTML = S.locations.map(loc => `
+    <div class="list-row">
+      <div>
+        <div class="list-row-label">${loc.label}</div>
+        <div class="list-row-sub">${loc.lat}, ${loc.lng}</div>
+      </div>
+      <button class="btn-del" onclick="deleteLoc('${loc.id}')" title="Remove">✕</button>
+    </div>`).join('') || '<p style="color:var(--text-3);font-size:.8rem;padding:6px 0">No locations yet</p>';
+
+  tl.innerHTML = S.tasks.map(task => `
+    <div class="list-row">
+      <div>
+        <div class="list-row-label">${task.icon} ${task.name}</div>
+        <div class="list-row-sub">${task.profile}</div>
+      </div>
+      <button class="btn-del" onclick="deleteTask('${task.id}')" title="Remove">✕</button>
+    </div>`).join('') || '<p style="color:var(--text-3);font-size:.8rem;padding:6px 0">No tasks yet</p>';
+}
+
+function renderStatus() {
+  const dot  = document.getElementById('status-dot');
+  const text = document.getElementById('status-text');
+  if (!dot || !text) return;
+  if (S.loading) {
+    dot.className = 'status-dot';
+    text.innerHTML = '<span class="spinner"></span> Fetching forecast…';
+    return;
+  }
+  if (!S.locations.length) {
+    dot.className = 'status-dot';
+    text.textContent = 'No location — add one in Settings';
+    return;
+  }
+  const ff = Object.values(S.forecasts);
+  if (!ff.length) {
+    dot.className = 'status-dot';
+    text.textContent = 'No forecast data — tap ↻ to fetch';
+    return;
+  }
+  const latest = Math.max(...ff.map(f => f.fetchedAt || 0));
+  const ageH   = (Date.now() - latest) / 3600000;
+  const when   = new Date(latest).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  if (ageH > 3) {
+    dot.className = 'status-dot stale';
+    text.textContent = `Stale — last fetched ${when}`;
+  } else {
+    dot.className = 'status-dot live';
+    text.textContent = `Live · fetched ${when}`;
+  }
+}
+
+// ──────────────────────────────────────────────────────
+// View routing
+// ──────────────────────────────────────────────────────
+function setView(v) {
+  S.view = v;
+  ['home','week','settings'].forEach(n => {
+    document.getElementById(`view-${n}`).classList.toggle('active', n === v);
+    document.getElementById(`nav-${n}`)?.classList.toggle('active', n === v);
+  });
+  if (v === 'settings') renderSettings();
+  if (v === 'week') renderWeek();
+}
+
+// ──────────────────────────────────────────────────────
+// Modals
+// ──────────────────────────────────────────────────────
+let activeModal = null;
+
+function openModal(name) {
+  activeModal = name;
+  document.getElementById('overlay').classList.add('open');
+  document.querySelectorAll('.modal').forEach(m => m.classList.remove('open'));
+  document.getElementById(`modal-${name}`).classList.add('open');
+  if (name === 'task') initTaskForm();
+  if (name === 'loc')  initLocForm();
+}
+
+function closeModal() {
+  document.getElementById('overlay').classList.remove('open');
+  document.querySelectorAll('.modal').forEach(m => m.classList.remove('open'));
+  activeModal = null;
+}
+
+function overlayClick(e) {
+  if (e.target === document.getElementById('overlay')) closeModal();
+}
+
+function initTaskForm() {
+  document.getElementById('t-name').value      = '';
+  document.getElementById('t-profile').value   = 'dry_calm';
+  document.getElementById('t-dur').value        = '3';
+  document.getElementById('tog-day').className  = 'toggle';
+  document.getElementById('tog-rec').className  = 'toggle';
+  document.getElementById('custom-block').style.display = 'none';
+  document.getElementById('recur-block').style.display  = 'none';
+  const ig = document.getElementById('icon-grid');
+  ig.innerHTML = ICONS.map((ic,i) =>
+    `<div class="icon-opt${i===0?' sel':''}" onclick="pickIcon(this)">${ic}</div>`
+  ).join('');
+  const sel = document.getElementById('t-loc');
+  sel.innerHTML = S.locations.length
+    ? S.locations.map(l => `<option value="${l.id}">${l.label}</option>`).join('')
+    : '<option value="">— Add a location first —</option>';
+}
+
+function initLocForm() {
+  ['l-name','l-lat','l-lng'].forEach(id => document.getElementById(id).value = '');
+}
+
+function pickIcon(el) {
+  document.querySelectorAll('.icon-opt').forEach(e => e.classList.remove('sel'));
+  el.classList.add('sel');
+}
+
+function profileChanged() {
+  const v = document.getElementById('t-profile').value;
+  document.getElementById('custom-block').style.display = v === 'custom' ? 'block' : 'none';
+  const durs = { dry_calm:3, dry_only:1, warm_dry:2, custom:2 };
+  document.getElementById('t-dur').value = durs[v] || 2;
+}
+
+function toggleRecurring() {
+  const on = document.getElementById('tog-rec').classList.contains('on');
+  document.getElementById('recur-block').style.display = on ? 'block' : 'none';
+}
+
+function uid() { return crypto.randomUUID ? crypto.randomUUID().slice(0,8) : Math.random().toString(36).slice(2,10); }
+
+function saveTask() {
+  const name = document.getElementById('t-name').value.trim();
+  if (!name) { alert('Please enter a task name'); return; }
+  const locId = document.getElementById('t-loc').value;
+  if (!locId) { alert('Please add a location first (Settings → Locations)'); return; }
+  const icon    = document.querySelector('.icon-opt.sel')?.textContent || '☀';
+  const profile = document.getElementById('t-profile').value;
+  const dur     = parseInt(document.getElementById('t-dur').value) || 2;
+  const daylight = document.getElementById('tog-day').classList.contains('on');
+  const recurring= document.getElementById('tog-rec').classList.contains('on');
+  const interval = parseInt(document.getElementById('t-interval')?.value) || 7;
+  let custom = null;
+  if (profile === 'custom') {
+    custom = {
+      maxWind: parseFloat(document.getElementById('t-wind').value) || null,
+      minTemp: parseFloat(document.getElementById('t-tmin').value) || null,
+      maxTemp: parseFloat(document.getElementById('t-tmax').value) || null
+    };
+  }
+  S.tasks.push({ id: uid(), name, icon, profile, custom, dur, daylight, recurring, interval, locId, lastDone: null, lastSug: null });
+  persist();
+  closeModal();
+  match();
+  renderCards();
+  setView('home');
+}
+
+function saveLocation() {
+  const label = document.getElementById('l-name').value.trim();
+  const lat   = parseFloat(document.getElementById('l-lat').value);
+  const lng   = parseFloat(document.getElementById('l-lng').value);
+  if (!label)            { alert('Enter a label'); return; }
+  if (isNaN(lat)||isNaN(lng)) { alert('Enter valid coordinates'); return; }
+  S.locations.push({ id: uid(), label, lat, lng });
+  persist();
+  closeModal();
+  renderSettings();
+  refresh();
+}
+
+function deleteLoc(id) {
+  if (!confirm('Remove this location?')) return;
+  S.locations = S.locations.filter(l => l.id !== id);
+  delete S.forecasts[id];
+  persist();
+  renderSettings();
+  render();
+}
+
+function deleteTask(id) {
+  if (!confirm('Remove this task?')) return;
+  S.tasks = S.tasks.filter(t => t.id !== id);
+  delete S.results[id];
+  persist();
+  renderSettings();
+  renderCards();
+}
+
+function clearData() {
+  if (!confirm('Clear all data? This cannot be undone.')) return;
+  localStorage.clear();
+  S = { locations:[], tasks:[], forecasts:{}, outcomes:[], results:{}, view:'home', loading:false };
+  render();
+  setView('home');
+}
+
+function detectGeo() {
+  if (!navigator.geolocation) { alert('Geolocation not available'); return; }
+  navigator.geolocation.getCurrentPosition(pos => {
+    document.getElementById('l-lat').value = pos.coords.latitude.toFixed(5);
+    document.getElementById('l-lng').value = pos.coords.longitude.toFixed(5);
+    if (!document.getElementById('l-name').value)
+      document.getElementById('l-name').value = 'Current location';
+  }, () => alert('Could not get your location'));
+}
+
+// ──────────────────────────────────────────────────────
+// Boot
+// ──────────────────────────────────────────────────────
+document.getElementById('btn-refresh').addEventListener('click', refresh);
+hydrate();
+match();
+render();
+setView('home');
+
+// Auto-refresh if data is missing or stale (>3h)
+const ffs = Object.values(S.forecasts);
+const newest = ffs.length ? Math.max(...ffs.map(f => f.fetchedAt||0)) : 0;
+if (S.locations.length && Date.now() - newest > 3 * 3600000) refresh();
+</script>
+</body>
+</html>
