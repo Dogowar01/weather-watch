@@ -340,12 +340,24 @@
     .s-hr.rain  { background: linear-gradient(to bottom, #7A3535 0%, #3C1C1C 100%); }
     .s-hr.night { background: rgba(255,255,255,0.02); }
     .s-hr.win {
-      background: linear-gradient(to bottom, rgba(201,137,78,0.85) 0%, rgba(140,85,25,0.6) 60%, rgba(80,45,10,0.4) 100%) !important;
-      animation: stripe-glow 3.2s ease-in-out infinite;
+      background: linear-gradient(to bottom, #F2A55A 0%, #C9894E 45%, #8A5A28 100%) !important;
+      border-left-color: rgba(255,180,100,0.25) !important;
     }
-    @keyframes stripe-glow {
-      0%,100% { box-shadow: 0 0 8px rgba(201,137,78,0.4); }
-      50%      { box-shadow: 0 0 18px rgba(201,137,78,0.8), 0 0 32px rgba(201,137,78,0.3); }
+
+    /* Glowing bar BELOW the strip (outside overflow:hidden so glow escapes) */
+    .strip-container { position: relative; }
+    .strip-win-bar {
+      position: absolute;
+      bottom: -3px;
+      height: 4px;
+      border-radius: 3px;
+      background: var(--amber);
+      pointer-events: none;
+      animation: win-bar-pulse 3.2s ease-in-out infinite;
+    }
+    @keyframes win-bar-pulse {
+      0%,100% { opacity: 0.9; box-shadow: 0 0 8px var(--amber), 0 0 16px rgba(201,137,78,0.4); }
+      50%      { opacity: 1;   box-shadow: 0 0 16px var(--amber), 0 0 32px rgba(201,137,78,0.7), 0 0 48px rgba(201,137,78,0.3); }
     }
     .strip-ticks {
       position: relative;
@@ -1598,12 +1610,15 @@ function renderCards() {
         <div class="card-reason">${w.reason}<span class="card-location-tag">${locLabel(task.locId)}</span></div>
         <div class="strip-wrap">
           <div class="strip-day-label">${dayStr}</div>
-          <div class="strip" id="strip-${task.id}"
-            onpointerdown="stripPointerDown(event,'${task.id}')"
-            onpointermove="stripPointerMove(event,'${task.id}')"
-            onpointerup="stripPointerUp(event,'${task.id}')"
-            onpointercancel="stripPointerUp(event,'${task.id}')"
-          >${stripHtml}</div>
+          <div class="strip-container">
+            <div class="strip" id="strip-${task.id}"
+              onpointerdown="stripPointerDown(event,'${task.id}')"
+              onpointermove="stripPointerMove(event,'${task.id}')"
+              onpointerup="stripPointerUp(event,'${task.id}')"
+              onpointercancel="stripPointerUp(event,'${task.id}')"
+            >${stripHtml}</div>
+            <div class="strip-win-bar" id="winbar-${task.id}" style="left:${(winStart/24*100).toFixed(1)}%;width:${(dur/24*100).toFixed(1)}%"></div>
+          </div>
           <div class="strip-ticks">
             <span style="left:0%">12am</span>
             <span style="left:25%">6am</span>
@@ -2008,6 +2023,9 @@ function stripUpdateFromEvent(e, taskId, w) {
   // Update strip highlight in place
   const blocks = strip.children;
   for (let i = 0; i < blocks.length; i++) blocks[i].classList.toggle('win', i >= hour && i < hour + dur);
+  // Move win bar
+  const winBar = document.getElementById('winbar-' + taskId);
+  if (winBar) { winBar.style.left = (hour/24*100).toFixed(1)+'%'; winBar.style.width = (dur/24*100).toFixed(1)+'%'; }
   // Update score pill and time label in place
   const slice = w.dayHourScores.slice(hour, hour + dur);
   const avg = Math.round(slice.reduce((a, b) => a + Math.max(0, b), 0) / Math.max(1, dur));
