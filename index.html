@@ -741,6 +741,25 @@
       margin-top: 7px;
     }
 
+    /* ── Geo search results ─────────────────── */
+    #l-results { margin-bottom: 4px; }
+    .geo-result {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      padding: 11px 13px;
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      margin-bottom: 5px;
+      cursor: pointer;
+      transition: border-color .12s, background .12s;
+    }
+    .geo-result:hover { border-color: var(--amber-line); background: var(--bg-3); }
+    .geo-result-name { font-size: 0.9rem; color: var(--ink); }
+    .geo-result-sub  { font-size: 0.72rem; color: var(--ink-3); }
+    #l-selected { margin-top: 6px; }
+
     /* Spinner */
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner {
@@ -887,19 +906,21 @@
     <div class="sheet-inner">
       <div class="sheet-title">Add location</div>
       <div class="fg">
-        <label class="fl">Label</label>
-        <input id="l-name" class="fi" type="text" placeholder="Home, Market site, …" autocomplete="off">
+        <label class="fl">Search for a town or city</label>
+        <div style="position:relative">
+          <input id="l-search" class="fi" type="text" placeholder="e.g. Launceston, London, Sydney…" autocomplete="off" oninput="geoSearch()">
+          <div id="l-searching" style="display:none;position:absolute;right:10px;top:50%;transform:translateY(-50%)"><span class="spinner"></span></div>
+        </div>
       </div>
-      <div class="fg">
-        <label class="fl">Latitude</label>
-        <input id="l-lat" class="fi" type="number" step="any" placeholder="-41.4332">
+      <div id="l-results"></div>
+      <div id="l-selected" style="display:none">
+        <div class="fg">
+          <label class="fl">Label (optional — rename it)</label>
+          <input id="l-name" class="fi" type="text" autocomplete="off">
+        </div>
+        <button class="btn-primary" onclick="saveLocation()">Save location</button>
       </div>
-      <div class="fg">
-        <label class="fl">Longitude</label>
-        <input id="l-lng" class="fi" type="number" step="any" placeholder="147.1441">
-        <p class="fhint">Or <button onclick="detectGeo()">use current location</button></p>
-      </div>
-      <button class="btn-primary" onclick="saveLocation()">Save location</button>
+      <p class="fhint" style="margin-top:10px">Or <button onclick="detectGeo()">use my current location</button></p>
       <button class="btn-secondary" onclick="closeSheet()">Cancel</button>
     </div>
   </div>
@@ -1448,9 +1469,6 @@ function initTaskForm() {
     :'<option value="">— Add a location first —</option>';
 }
 
-function initLocForm() {
-  ['l-name','l-lat','l-lng'].forEach(id=>document.getElementById(id).value='');
-}
 
 function pickIcon(el) {
   document.querySelectorAll('.icon-opt').forEach(e=>e.classList.remove('sel'));
@@ -1493,13 +1511,72 @@ function saveTask() {
 }
 
 // ── Location form ─────────────────────────────────
+let _geoTimer = null;
+let _pendingLoc = null; // { lat, lng, defaultLabel }
+
+function initLocForm() {
+  document.getElementById('l-search').value = '';
+  document.getElementById('l-name').value = '';
+  document.getElementById('l-results').innerHTML = '';
+  document.getElementById('l-selected').style.display = 'none';
+  document.getElementById('l-searching').style.display = 'none';
+  _pendingLoc = null;
+}
+
+function geoSearch() {
+  clearTimeout(_geoTimer);
+  const q = document.getElementById('l-search').value.trim();
+  document.getElementById('l-results').innerHTML = '';
+  document.getElementById('l-selected').style.display = 'none';
+  _pendingLoc = null;
+  if (q.length < 2) return;
+  _geoTimer = setTimeout(async () => {
+    document.getElementById('l-searching').style.display = 'block';
+    try {
+      const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=6&language=en&format=json`);
+      const data = await res.json();
+      renderGeoResults(data.results || []);
+    } catch(e) {
+      document.getElementById('l-results').innerHTML = '<p class="fhint" style="padding:6px 0;color:var(--red)">Search failed — check your connection.</p>';
+    }
+    document.getElementById('l-searching').style.display = 'none';
+  }, 380);
+}
+
+function renderGeoResults(results) {
+  const el = document.getElementById('l-results');
+  if (!results.length) {
+    el.innerHTML = '<p class="fhint" style="padding:6px 0">No places found — try a different spelling.</p>';
+    return;
+  }
+  el.innerHTML = results.map((r, i) => {
+    const parts = [r.admin1, r.country].filter(Boolean).join(', ');
+    return `<div class="geo-result" onclick="pickGeoResult(${i})" data-idx="${i}"
+      data-lat="${r.latitude}" data-lng="${r.longitude}"
+      data-name="${r.name}" data-sub="${parts}">
+      <span class="geo-result-name">${r.name}</span>
+      <span class="geo-result-sub">${parts}</span>
+    </div>`;
+  }).join('');
+}
+
+function pickGeoResult(idx) {
+  const el = document.querySelector(`.geo-result[data-idx="${idx}"]`);
+  if (!el) return;
+  _pendingLoc = {
+    lat: parseFloat(el.dataset.lat),
+    lng: parseFloat(el.dataset.lng),
+    defaultLabel: [el.dataset.name, el.dataset.sub].filter(Boolean).join(', ')
+  };
+  document.getElementById('l-name').value = el.dataset.name;
+  document.getElementById('l-results').innerHTML = '';
+  document.getElementById('l-selected').style.display = 'block';
+}
+
 function saveLocation() {
-  const label=document.getElementById('l-name').value.trim();
-  const lat=parseFloat(document.getElementById('l-lat').value);
-  const lng=parseFloat(document.getElementById('l-lng').value);
-  if (!label)         { alert('Enter a label'); return; }
-  if (isNaN(lat)||isNaN(lng)) { alert('Enter valid coordinates'); return; }
-  S.locs.push({id:uid(),label,lat,lng});
+  if (!_pendingLoc) { alert('Search for and select a place first'); return; }
+  const label = document.getElementById('l-name').value.trim() || _pendingLoc.defaultLabel;
+  S.locs.push({ id: uid(), label, lat: _pendingLoc.lat, lng: _pendingLoc.lng });
   save(); closeSheet(); renderSettings(); refresh();
 }
 
@@ -1526,12 +1603,13 @@ function clearData() {
 
 function detectGeo() {
   if (!navigator.geolocation) { alert('Geolocation not available'); return; }
-  navigator.geolocation.getCurrentPosition(p=>{
-    document.getElementById('l-lat').value=p.coords.latitude.toFixed(5);
-    document.getElementById('l-lng').value=p.coords.longitude.toFixed(5);
-    if (!document.getElementById('l-name').value)
-      document.getElementById('l-name').value='Current location';
-  },()=>alert('Could not get location'));
+  navigator.geolocation.getCurrentPosition(p => {
+    _pendingLoc = { lat: p.coords.latitude, lng: p.coords.longitude, defaultLabel: 'Current location' };
+    document.getElementById('l-search').value = '';
+    document.getElementById('l-results').innerHTML = '';
+    document.getElementById('l-name').value = 'Current location';
+    document.getElementById('l-selected').style.display = 'block';
+  }, () => alert('Could not get your location'));
 }
 
 // ── Boot ──────────────────────────────────────────
