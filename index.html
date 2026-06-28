@@ -229,7 +229,7 @@
       50%      { box-shadow: 2px 0 14px rgba(95,144,112,0.7); opacity: 0.85; }
     }
 
-    .card-body { flex: 1; padding: 16px 16px 14px 14px; }
+    .card-body { flex: 1; min-width: 0; padding: 16px 16px 14px 14px; overflow: hidden; }
 
     .card-head {
       display: flex;
@@ -351,6 +351,7 @@
       position: relative;
       height: 13px;
       margin-top: 4px;
+      overflow: hidden;
     }
     .strip-ticks span {
       position: absolute;
@@ -360,6 +361,7 @@
       font-family: 'Menlo','Monaco',monospace;
       white-space: nowrap;
     }
+    .strip-ticks span:last-child { transform: translateX(-100%); }
 
     /* ── Strip drag hint ──────────────────────── */
     .strip { cursor: ew-resize; }
@@ -389,6 +391,7 @@
       overflow-x: auto;
       flex-wrap: nowrap;
       -webkit-overflow-scrolling: touch;
+      touch-action: pan-x;
       scrollbar-width: none;
       padding-bottom: 4px;
     }
