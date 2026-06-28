@@ -741,6 +741,75 @@
       margin-top: 7px;
     }
 
+    /* ── Task templates ─────────────────────── */
+    .tpl-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+    }
+    .tpl-btn {
+      padding: 9px 10px;
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      color: var(--ink-2);
+      font-size: 0.8rem;
+      font-family: inherit;
+      cursor: pointer;
+      text-align: left;
+      transition: border-color .12s, background .12s, color .12s;
+    }
+    .tpl-btn:hover { border-color: var(--line-2); color: var(--ink); }
+    .tpl-btn.active { border-color: var(--amber-line); background: var(--amber-bg); color: var(--ink); }
+    .tpl-or {
+      text-align: center;
+      font-size: 0.7rem;
+      color: var(--ink-3);
+      margin: 14px 0 6px;
+      position: relative;
+    }
+    .tpl-or::before, .tpl-or::after {
+      content: '';
+      position: absolute;
+      top: 50%; width: 38%;
+      height: 1px;
+      background: var(--line);
+    }
+    .tpl-or::before { left: 0; }
+    .tpl-or::after  { right: 0; }
+
+    /* ── Card actions row ────────────────────── */
+    .card-actions {
+      display: flex;
+      gap: 6px;
+      margin-top: 12px;
+    }
+    .btn-done-sm {
+      flex: 1;
+      padding: 6px 10px;
+      background: rgba(95,144,112,0.1);
+      border: 1px solid rgba(95,144,112,0.2);
+      border-radius: 20px;
+      font-size: 0.72rem;
+      color: #82C495;
+      font-family: inherit;
+      cursor: pointer;
+      transition: background .15s, border-color .15s;
+    }
+    .btn-done-sm:hover { background: rgba(95,144,112,0.18); border-color: rgba(95,144,112,0.35); }
+    .btn-share-sm {
+      padding: 6px 12px;
+      background: none;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      font-size: 0.72rem;
+      color: var(--ink-3);
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color .15s, color .15s;
+    }
+    .btn-share-sm:hover { border-color: var(--line-2); color: var(--ink-2); }
+
     /* ── Geo search results ─────────────────── */
     #l-results { margin-bottom: 4px; }
     .geo-result {
@@ -844,6 +913,20 @@
     <div class="sheet-handle"></div>
     <div class="sheet-inner">
       <div class="sheet-title">New task</div>
+      <div class="fg">
+        <label class="fl">Quick start — pick a template</label>
+        <div class="tpl-grid" id="tpl-grid">
+          <button class="tpl-btn" onclick="applyTemplate('paint')">🖌️ Paint / stain</button>
+          <button class="tpl-btn" onclick="applyTemplate('mow')">🌿 Mow the lawn</button>
+          <button class="tpl-btn" onclick="applyTemplate('wash')">🚗 Wash the car</button>
+          <button class="tpl-btn" onclick="applyTemplate('spray')">💧 Spray weeds</button>
+          <button class="tpl-btn" onclick="applyTemplate('concrete')">🏗️ Lay concrete</button>
+          <button class="tpl-btn" onclick="applyTemplate('plant')">🌾 Plant / seed</button>
+          <button class="tpl-btn" onclick="applyTemplate('dining')">🪑 Outdoor dining</button>
+          <button class="tpl-btn" onclick="applyTemplate('walk')">🐾 Dog walk</button>
+        </div>
+      </div>
+      <div class="tpl-or">or build your own</div>
       <div class="fg">
         <label class="fl">Task name</label>
         <input id="t-name" class="fi" type="text" placeholder="e.g. Paint the fence" autocomplete="off">
@@ -991,6 +1074,10 @@ function scoreHr(precip, wind, temp, p) {
   return Math.max(0, Math.min(100, s));
 }
 
+function degToCompass(deg) {
+  return ['N','NE','E','SE','S','SW','W','NW'][Math.round((deg||0)/45)%8];
+}
+
 function buildWindowObj(fc, scores, s, e, minDur, p) {
   const winDay = fc.times[s].slice(0,10);
   const ds = fc.times.findIndex(t => t.startsWith(winDay));
@@ -1010,11 +1097,24 @@ function buildWindowObj(fc, scores, s, e, minDur, p) {
   const avgT = tl.reduce((a,b)=>a+b,0)/tl.length;
   let sum = 0; for (let m = s; m <= e; m++) sum += scores[m];
   const avg = sum / (e - s + 1);
+
+  // Wind direction: average bearing over window
+  const wdl = fc.winddir ? fc.winddir.slice(s, e+1).filter(v=>v!=null) : [];
+  const windCompass = wdl.length ? degToCompass(wdl.reduce((a,b)=>a+b,0)/wdl.length) : null;
+
+  // UV: max over window
+  const uvl = fc.uv ? fc.uv.slice(s, e+1).filter(v=>v!=null) : [];
+  const maxUV = uvl.length ? Math.max(...uvl) : null;
+
   const parts = [];
   if (maxP === 0) parts.push(`${minDur}h dry`); else parts.push(`${Math.round(100-maxP)}% dry`);
-  if (p.maxWind !== null) parts.push(`wind ${Math.round(maxW)} km/h`);
+  if (p.maxWind !== null) {
+    parts.push(`wind ${Math.round(maxW)} km/h${windCompass ? ' ' + windCompass : ''}`);
+  }
   parts.push(`${Math.round(avgT)}°C`);
-  return { score: Math.round(avg), wStart, wEnd, strip, winDay, reason: parts.join(' · ') };
+  if (maxUV !== null && maxUV >= 3) parts.push(`UV ${maxUV.toFixed(0)}`);
+
+  return { score: Math.round(avg), wStart, wEnd, strip, winDay, reason: parts.join(' · '), maxUV, windCompass };
 }
 
 function findWindows(task, fc, maxResults = 5) {
@@ -1082,7 +1182,7 @@ function findWindows(task, fc, maxResults = 5) {
 async function fetchFC(loc) {
   const url = `https://api.open-meteo.com/v1/forecast`
     + `?latitude=${loc.lat}&longitude=${loc.lng}`
-    + `&hourly=precipitation_probability,wind_speed_10m,temperature_2m`
+    + `&hourly=precipitation_probability,wind_speed_10m,winddirection_10m,temperature_2m,uv_index`
     + `&daily=sunrise,sunset&forecast_days=16&timezone=auto`;
   const r = await fetch(url);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -1092,7 +1192,9 @@ async function fetchFC(loc) {
     times:      d.hourly.time,
     precip:     d.hourly.precipitation_probability,
     wind:       d.hourly.wind_speed_10m,
+    winddir:    d.hourly.winddirection_10m,
     temp:       d.hourly.temperature_2m,
+    uv:         d.hourly.uv_index,
     dailyTimes: d.daily.time,
     sunrises:   d.daily.sunrise,
     sunsets:    d.daily.sunset,
@@ -1156,7 +1258,7 @@ function locLabel(id) { return S.locs.find(l=>l.id===id)?.label||'—'; }
 
 // ── Reminder ─────────────────────────────────────
 function wantReminder(task, w) {
-  if (!w || w.score < 90) return false;
+  if (!w || w.score < 75) return false;
   const p = task.lastSug;
   if (!p) return true;
   if (p.dismissed) {
@@ -1174,9 +1276,23 @@ function pastWin(task) {
 
 function genICS(task, r) {
   const fmt = d => d.toISOString().replace(/[-:.]/g,'').slice(0,-4)+'Z';
-  const ics  = ['BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Weather Window//EN',
-    'BEGIN:VEVENT',`DTSTART:${fmt(new Date(r.wStart))}`,`DTEND:${fmt(new Date(r.wEnd))}`,
-    `SUMMARY:${task.name}`,`DESCRIPTION:${r.reason}`,'END:VEVENT','END:VCALENDAR'
+  const fh = d => { let h=new Date(d).getHours(); const p=h>=12?'pm':'am'; h=h%12||12; return `${h}${p}`; };
+  const dateStr = new Date(r.wStart).toLocaleDateString('en',{weekday:'long',day:'numeric',month:'long'});
+  const summary = `${task.icon} ${task.name} — ${fh(r.wStart)} window`;
+  const desc = `Weather Window found a score-${r.score} window on ${dateStr} from ${fh(r.wStart)} to ${fh(r.wEnd)}.\\n${r.reason}`;
+  const ics = [
+    'BEGIN:VCALENDAR','VERSION:2.0','PRODID:-//Weather Window//EN','CALSCALE:GREGORIAN',
+    'BEGIN:VEVENT',
+    `DTSTART:${fmt(new Date(r.wStart))}`,
+    `DTEND:${fmt(new Date(r.wEnd))}`,
+    `SUMMARY:${summary}`,
+    `DESCRIPTION:${desc}`,
+    'BEGIN:VALARM',
+    'TRIGGER:-PT60M',
+    'ACTION:DISPLAY',
+    `DESCRIPTION:${task.name} weather window opens in 1 hour`,
+    'END:VALARM',
+    'END:VEVENT','END:VCALENDAR'
   ].join('\r\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([ics],{type:'text/calendar'}));
@@ -1294,7 +1410,11 @@ function renderCards() {
           <div class="strip-day-label">${dayStr}</div>
           <div class="strip">${strip}</div>
         </div>
-        ${alts}`;
+        ${alts}
+        <div class="card-actions">
+          <button class="btn-done-sm" onclick="markDone('${task.id}')">✓ Mark done</button>
+          <button class="btn-share-sm" onclick="shareWin('${task.id}')">↗ Share</button>
+        </div>`;
     } else {
       body = `<p class="card-muted">No suitable window in the next 16 days.</p>
               <div class="card-reason" style="margin:0"><span class="card-location-tag">${locLabel(task.locId)}</span></div>`;
@@ -1610,6 +1730,59 @@ function detectGeo() {
     document.getElementById('l-name').value = 'Current location';
     document.getElementById('l-selected').style.display = 'block';
   }, () => alert('Could not get your location'));
+}
+
+// ── Templates ─────────────────────────────────────
+const TEMPLATES = {
+  paint:    { name:'Paint the fence',  icon:'🖌️', profile:'dry_calm', dur:3, daylight:true  },
+  mow:      { name:'Mow the lawn',     icon:'🌿', profile:'dry_only', dur:1, daylight:true  },
+  wash:     { name:'Wash the car',     icon:'🚗', profile:'dry_only', dur:2, daylight:false },
+  spray:    { name:'Spray weeds',      icon:'💧', profile:'dry_calm', dur:2, daylight:true  },
+  concrete: { name:'Lay concrete',     icon:'🏗️', profile:'dry_calm', dur:4, daylight:true  },
+  plant:    { name:'Plant seedlings',  icon:'🌾', profile:'warm_dry', dur:2, daylight:true  },
+  dining:   { name:'Outdoor dining',   icon:'🪑', profile:'warm_dry', dur:3, daylight:false },
+  walk:     { name:'Dog walk',         icon:'🐾', profile:'dry_only', dur:1, daylight:false },
+};
+
+function applyTemplate(key) {
+  const t = TEMPLATES[key];
+  document.getElementById('t-name').value = t.name;
+  document.getElementById('t-profile').value = t.profile;
+  document.getElementById('t-dur').value = t.dur;
+  if (t.daylight) document.getElementById('tog-day').classList.add('on');
+  else document.getElementById('tog-day').classList.remove('on');
+  profileChanged();
+  document.querySelectorAll('.icon-opt').forEach(el => {
+    el.classList.toggle('sel', el.textContent.trim() === t.icon);
+  });
+  document.querySelectorAll('.tpl-btn').forEach(b => b.classList.remove('active'));
+  const active = [...document.querySelectorAll('.tpl-btn')].find(b => b.onclick?.toString().includes(`'${key}'`));
+  if (active) active.classList.add('active');
+}
+
+// ── Share ─────────────────────────────────────────
+function shareWin(taskId) {
+  const task = S.tasks.find(t => t.id === taskId);
+  const w = getWin(taskId);
+  if (!task || !w) return;
+  const text = `${task.icon} ${task.name}\n${fmtWin(w.wStart, w.wEnd)} — ${w.reason}\nScore: ${w.score}/100`;
+  if (navigator.share) {
+    navigator.share({ title: 'Weather Window', text });
+  } else {
+    navigator.clipboard?.writeText(text).then(() => {
+      alert('Copied to clipboard');
+    });
+  }
+}
+
+// ── Mark done ─────────────────────────────────────
+function markDone(taskId) {
+  const task = S.tasks.find(t => t.id === taskId);
+  if (!task) return;
+  S.outcomes.push({ taskId, did: true, held: true, at: Date.now() });
+  if (task.lastSug) task.lastSug.outcomeLogged = true;
+  task.lastDone = Date.now();
+  save(); match(); renderCards();
 }
 
 // ── Boot ──────────────────────────────────────────
