@@ -290,9 +290,8 @@
       color: var(--ink);
       margin-bottom: 4px;
     }
-    .card.peak .card-window {
-      animation: text-glow 3.2s ease-in-out infinite;
-    }
+    .card.peak .card-window { animation: text-glow 3.2s ease-in-out infinite; }
+    .card-window-dim { color: var(--ink-2) !important; font-size: 1rem !important; font-style: italic; }
     @keyframes text-glow {
       0%,100% { text-shadow: none; }
       50%      { text-shadow: 0 0 16px rgba(95,144,112,0.45), 0 0 32px rgba(95,144,112,0.2); }
@@ -1186,6 +1185,7 @@ let S = {
   outcomes:  [],
   results:   {},   // taskId → { windows: [...], _cooldown: bool, allDayScores: {} }
   sel:       {},   // taskId → selected window index
+  selDay:    {},   // taskId → date string when user picks a non-viable day
   winHour:   {},   // taskId → manually dragged start hour (null = use optimal)
   view:      'home',
   loading:   false,
@@ -1199,6 +1199,7 @@ function save() {
   localStorage.setItem('ww_out',   JSON.stringify(S.outcomes));
   localStorage.setItem('ww_sel',   JSON.stringify(S.sel));
   localStorage.setItem('ww_wh',    JSON.stringify(S.winHour));
+  localStorage.setItem('ww_sd',    JSON.stringify(S.selDay));
 }
 function load() {
   S.locs      = JSON.parse(localStorage.getItem('ww_locs')  || '[]');
@@ -1207,6 +1208,7 @@ function load() {
   S.outcomes  = JSON.parse(localStorage.getItem('ww_out')   || '[]');
   S.sel       = JSON.parse(localStorage.getItem('ww_sel')   || '{}');
   S.winHour   = JSON.parse(localStorage.getItem('ww_wh')    || '{}');
+  S.selDay    = JSON.parse(localStorage.getItem('ww_sd')    || '{}');
 }
 
 // ── Profile ───────────────────────────────────────
@@ -1407,10 +1409,39 @@ function match() {
   }
 }
 
+// Build a view-only strip for a day that has no viable window
+function getDayView(task, dateStr) {
+  const fc = S.forecasts[task.locId];
+  if (!fc) return null;
+  const p = prof(task);
+  const ds = fc.times.findIndex(t => t.startsWith(dateStr));
+  if (ds < 0) return null;
+  const de = Math.min(ds + 24, fc.times.length);
+  const strip = [], dayHourScores = [];
+  let bestScore = 0, bestHour = 0;
+  for (let i = ds; i < de; i++) {
+    const sc = scoreHr(fc.precip[i]??0, fc.wind[i]??0, fc.temp[i]??15, p);
+    let cls = 'night';
+    if (sc > 0) cls = sc >= 70 ? 'good' : sc >= 35 ? 'mar' : 'rain';
+    else if ((fc.precip[i]??0) > 0) cls = 'rain';
+    strip.push({ cls });
+    dayHourScores.push(sc);
+    if (sc > bestScore) { bestScore = sc; bestHour = i - ds; }
+  }
+  const wStart = new Date(fc.times[ds]);
+  return { score: Math.round(bestScore), wStart, wEnd: new Date(wStart), strip, winDay: dateStr, dayHourScores, optimalStartHour: bestHour, noWindow: true };
+}
+
 // Active window for a task (respects user selection and manual hour drag)
 function getWin(taskId) {
   const r = S.results[taskId];
-  if (!r || r._cooldown || !r.windows?.length) return null;
+  if (!r || r._cooldown) return null;
+  // Non-viable day selected by user
+  if (S.selDay[taskId]) {
+    const task = S.tasks.find(t => t.id === taskId);
+    return task ? getDayView(task, S.selDay[taskId]) : null;
+  }
+  if (!r.windows?.length) return null;
   const w = r.windows[S.sel[taskId] || 0];
   if (!w) return null;
   const manualHour = S.winHour[taskId];
@@ -1427,7 +1458,15 @@ function getWin(taskId) {
 
 function selectWin(taskId, idx) {
   S.sel[taskId] = idx;
-  S.winHour[taskId] = null; // reset manual drag when switching day
+  S.selDay[taskId] = null;
+  S.winHour[taskId] = null;
+  save();
+  renderCards();
+}
+
+function selectDay(taskId, dateStr) {
+  S.selDay[taskId] = dateStr;
+  S.winHour[taskId] = null;
   save();
   renderCards();
 }
@@ -1574,11 +1613,11 @@ function renderCards() {
       body = `<p class="card-muted">On cooldown — check back in ~${dLeft} day${dLeft!==1?'s':''}.</p>
               <div class="card-reason" style="margin:0"><span class="card-location-tag">${locLabel(task.locId)}</span></div>`;
     } else if (w) {
-      const manualHour = S.winHour[task.id];
+      const manualHour = w.noWindow ? null : S.winHour[task.id];
       const dur = prof(task).dur;
       const winStart = manualHour != null ? manualHour : w.optimalStartHour;
       const stripHtml = w.strip.map((h, i) =>
-        `<div class="s-hr ${h.cls}${i >= winStart && i < winStart + dur ? ' win' : ''}"></div>`
+        `<div class="s-hr ${h.cls}${(!w.noWindow && i >= winStart && i < winStart + dur) ? ' win' : ''}"></div>`
       ).join('');
       const dayStr = new Date(w.wStart).toLocaleDateString('en',{weekday:'long',day:'numeric',month:'short'});
       const fh = dd => { let h=new Date(dd).getHours(); const p=h>=12?'pm':'am'; h=h%12||12; return `${h}${p}`; };
@@ -1590,34 +1629,41 @@ function renderCards() {
         const ds = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
         const winIdx = r.windows.findIndex(ww => ww.winDay === ds);
         const isViable = winIdx >= 0;
-        const isActive = isViable && winIdx === sel;
+        const isActive = S.selDay[task.id]
+          ? ds === S.selDay[task.id]
+          : (isViable && winIdx === sel);
         const score = isViable ? r.windows[winIdx].score : Math.round(r.allDayScores?.[ds] || 0);
         const dayName = di === 0 ? 'Today' : di === 1 ? 'Tomorrow'
           : d.toLocaleDateString('en',{weekday:'short',day:'numeric',month:'short'});
         const timeStr = isViable ? fh(new Date(r.windows[winIdx].wStart)) : '—';
-        const bc = isViable ? bandClass(score) : 'low';
-        const clickHandler = isViable ? `onclick="selectWin('${task.id}',${winIdx})"` : '';
-        return `<button class="alt-chip${isActive?' active':''}${!isViable?' dim':''}" ${clickHandler} ${!isViable?'style="cursor:default"':''}>
+        const bc = isViable ? bandClass(score) : (score >= 45 ? 'mid' : 'low');
+        const clickHandler = isViable
+          ? `onclick="selectWin('${task.id}',${winIdx})"`
+          : `onclick="selectDay('${task.id}','${ds}')"`;
+        return `<button class="alt-chip${isActive?' active':''}${!isViable?' dim':''}" ${clickHandler}>
           <span class="alt-day">${dayName}</span>
           <span class="alt-time">${timeStr}</span>
           <span class="alt-score ${bc}">${score||'—'}</span>
         </button>`;
       }).join('');
 
+      const winBarHtml = w.noWindow ? '' :
+        `<div class="strip-win-bar" id="winbar-${task.id}" style="left:${(winStart/24*100).toFixed(1)}%;width:${(dur/24*100).toFixed(1)}%"></div>`;
+      const dragAttrs = w.noWindow ? '' :
+        `onpointerdown="stripPointerDown(event,'${task.id}')" onpointermove="stripPointerMove(event,'${task.id}')" onpointerup="stripPointerUp(event,'${task.id}')" onpointercancel="stripPointerUp(event,'${task.id}')"`;
       body = `
-        <div class="card-window-label">Best window</div>
-        <div class="card-window" id="win-time-${task.id}">${fmtWin(w.wStart,w.wEnd)}</div>
-        <div class="card-reason">${w.reason}<span class="card-location-tag">${locLabel(task.locId)}</span></div>
+        <div class="card-window-label">${w.noWindow ? 'Forecast only' : 'Best window'}</div>
+        <div class="card-window${w.noWindow ? ' card-window-dim' : ''}" id="win-time-${task.id}">${
+          w.noWindow
+            ? `No ${dur}h window — conditions too broken`
+            : fmtWin(w.wStart, w.wEnd)
+        }</div>
+        <div class="card-reason">${w.noWindow ? `Best single hour scores ~${w.score}` : w.reason}<span class="card-location-tag">${locLabel(task.locId)}</span></div>
         <div class="strip-wrap">
           <div class="strip-day-label">${dayStr}</div>
           <div class="strip-container">
-            <div class="strip" id="strip-${task.id}"
-              onpointerdown="stripPointerDown(event,'${task.id}')"
-              onpointermove="stripPointerMove(event,'${task.id}')"
-              onpointerup="stripPointerUp(event,'${task.id}')"
-              onpointercancel="stripPointerUp(event,'${task.id}')"
-            >${stripHtml}</div>
-            <div class="strip-win-bar" id="winbar-${task.id}" style="left:${(winStart/24*100).toFixed(1)}%;width:${(dur/24*100).toFixed(1)}%"></div>
+            <div class="strip" id="strip-${task.id}" ${dragAttrs}>${stripHtml}</div>
+            ${winBarHtml}
           </div>
           <div class="strip-ticks">
             <span style="left:0%">12am</span>
@@ -1626,16 +1672,16 @@ function renderCards() {
             <span style="left:75%">6pm</span>
             <span style="left:100%">12am</span>
           </div>
-          <div class="strip-hint">drag to move window</div>
+          ${w.noWindow ? '' : '<div class="strip-hint">drag to move window</div>'}
         </div>
         <div class="alts">
           <span class="alts-label">All days</span>
           <div class="alts-row">${allChips}</div>
         </div>
-        <div class="card-actions">
+        ${w.noWindow ? '' : `<div class="card-actions">
           <button class="btn-done-sm" onclick="markDone('${task.id}')">✓ Mark done</button>
           <button class="btn-share-sm" onclick="shareWin('${task.id}')">↗ Share</button>
-        </div>`;
+        </div>`}`;
     } else {
       body = `<p class="card-muted">No suitable window in the next 16 days.</p>
               <div class="card-reason" style="margin:0"><span class="card-location-tag">${locLabel(task.locId)}</span></div>`;
@@ -1656,7 +1702,7 @@ function renderCards() {
         </div>` : ''
     }</div>` : '';
 
-    const isPeak = w && w.score >= 90;
+    const isPeak = w && !w.noWindow && w.score >= 90;
     return `<div class="card${isPeak?' peak':''}">
       <div class="card-inner">
         <div class="card-accent ${bc}"></div>
@@ -1664,7 +1710,7 @@ function renderCards() {
           <div class="card-head">
             <span class="task-icon">${task.icon||'☀'}</span>
             <span class="task-name">${task.name}</span>
-            ${w?`<span class="score-pill ${bc}" id="score-${task.id}">${w.score}</span>`:''}
+            ${w&&!w.noWindow?`<span class="score-pill ${bc}" id="score-${task.id}">${w.score}</span>`:''}
             <button class="btn-del" onclick="deleteTaskFromCard('${task.id}')" title="Delete task" style="margin-left:4px">✕</button>
           </div>
           ${body}
