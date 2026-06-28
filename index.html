@@ -339,8 +339,9 @@
     .s-hr.rain  { background: linear-gradient(to bottom, #7A3535 0%, #3C1C1C 100%); }
     .s-hr.night { background: rgba(255,255,255,0.02); }
     .s-hr.win {
-      background: linear-gradient(to bottom, #F2A55A 0%, #C9894E 45%, #8A5A28 100%) !important;
-      border-left-color: rgba(255,180,100,0.25) !important;
+      background: linear-gradient(to bottom, #7DFFA0 0%, #2ECC60 35%, #1A8A40 100%) !important;
+      border-left-color: rgba(120,255,160,0.2) !important;
+      box-shadow: inset 0 1px 0 rgba(180,255,210,0.55);
     }
 
     /* Glowing bar BELOW the strip (outside overflow:hidden so glow escapes) */
@@ -350,13 +351,13 @@
       bottom: -3px;
       height: 4px;
       border-radius: 3px;
-      background: var(--amber);
+      background: #2ECC60;
       pointer-events: none;
       animation: win-bar-pulse 3.2s ease-in-out infinite;
     }
     @keyframes win-bar-pulse {
-      0%,100% { opacity: 0.9; box-shadow: 0 0 8px var(--amber), 0 0 16px rgba(201,137,78,0.4); }
-      50%      { opacity: 1;   box-shadow: 0 0 16px var(--amber), 0 0 32px rgba(201,137,78,0.7), 0 0 48px rgba(201,137,78,0.3); }
+      0%,100% { opacity: 0.85; box-shadow: 0 0 10px #2ECC60, 0 0 22px rgba(46,204,96,0.5); }
+      50%      { opacity: 1;   box-shadow: 0 0 22px #2ECC60, 0 0 44px rgba(46,204,96,0.8), 0 0 66px rgba(46,204,96,0.35); }
     }
     .strip-ticks {
       position: relative;
