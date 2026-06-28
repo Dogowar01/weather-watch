@@ -830,6 +830,60 @@
     .geo-result-sub  { font-size: 0.72rem; color: var(--ink-3); }
     #l-selected { margin-top: 6px; }
 
+    /* ── Done view ───────────────────────────── */
+    #view-done { padding: 0 14px; }
+    .done-card {
+      background: rgba(16,16,14,0.72);
+      backdrop-filter: blur(18px);
+      -webkit-backdrop-filter: blur(18px);
+      border: 1px solid var(--line);
+      border-radius: var(--r);
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .done-check {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: rgba(95,144,112,0.15);
+      border: 1px solid rgba(95,144,112,0.3);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.75rem;
+      color: #82C495;
+      flex-shrink: 0;
+    }
+    .done-info { flex: 1; min-width: 0; }
+    .done-name { font-size: 0.92rem; color: var(--ink); margin-bottom: 2px; }
+    .done-meta { font-size: 0.68rem; color: var(--ink-3); font-family: 'Menlo','Monaco',monospace; }
+    .done-actions { display: flex; gap: 6px; flex-shrink: 0; }
+    .btn-reactivate {
+      padding: 5px 10px;
+      background: none;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font-size: 0.7rem;
+      color: var(--ink-3);
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color .15s, color .15s;
+      white-space: nowrap;
+    }
+    .btn-reactivate:hover { border-color: var(--amber-line); color: var(--amber); }
+    .btn-edit-sm {
+      padding: 5px 10px;
+      background: none;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      font-size: 0.7rem;
+      color: var(--ink-3);
+      font-family: inherit;
+      cursor: pointer;
+      transition: border-color .15s, color .15s;
+    }
+    .btn-edit-sm:hover { border-color: var(--line-2); color: var(--ink-2); }
+
     /* Spinner */
     @keyframes spin { to { transform: rotate(360deg); } }
     .spinner {
@@ -870,6 +924,11 @@
     <div class="week-rows" id="week-rows"></div>
   </div>
 
+  <!-- Done view -->
+  <div class="view" id="view-done">
+    <div id="done-list"></div>
+  </div>
+
   <!-- Settings view -->
   <div class="view" id="view-settings">
     <div class="s-section">
@@ -899,7 +958,10 @@
     <span class="ni">⊟</span>Week
   </button>
   <button class="nav-tab nav-add" onclick="openSheet('task')">
-    <span class="ni">+</span>Add task
+    <span class="ni">+</span>Add
+  </button>
+  <button class="nav-tab" id="nav-done" onclick="setView('done')">
+    <span class="ni">✓</span>Done
   </button>
   <button class="nav-tab" id="nav-settings" onclick="setView('settings')">
     <span class="ni">◎</span>Settings
@@ -1362,7 +1424,11 @@ function renderCards() {
     return;
   }
 
-  const sorted = [...S.tasks].sort((a,b)=>{
+  const sorted = [...S.tasks].filter(task => {
+    if (!task.lastDone) return true;
+    if (!task.recurring) return false;
+    return (Date.now() - task.lastDone) / 86400000 >= (task.interval || 7);
+  }).sort((a,b)=>{
     const ra=S.results[a.id], rb=S.results[b.id];
     if (!ra&&!rb) return 0; if (!ra) return 1; if (!rb) return -1;
     return new Date(ra.wStart)-new Date(rb.wStart);
@@ -1521,7 +1587,10 @@ function renderSettings() {
         <div class="s-item-name">${t.icon} ${t.name}</div>
         <div class="s-item-sub">${t.profile}</div>
       </div>
-      <button class="btn-del" onclick="deleteTask('${t.id}')">✕</button>
+      <div style="display:flex;gap:4px">
+        <button class="btn-edit-sm" onclick="editTask('${t.id}')">Edit</button>
+        <button class="btn-del" onclick="deleteTask('${t.id}')">✕</button>
+      </div>
     </div>`).join('')||'<p style="color:var(--ink-3);font-size:.78rem;padding:4px 6px 10px">No tasks yet</p>';
 }
 
@@ -1545,18 +1614,19 @@ function renderStatus() {
   else         { dot.className='s-dot live';  txt.textContent=`Live · ${when}`; }
 }
 
-function render() { renderCards(); renderWeek(); renderSettings(); renderStatus(); }
+function render() { renderCards(); renderWeek(); renderSettings(); renderDone(); renderStatus(); }
 
 // ── View routing ──────────────────────────────────
 function setView(v) {
   S.view=v;
-  ['home','week','settings'].forEach(n=>{
+  ['home','week','done','settings'].forEach(n=>{
     document.getElementById(`view-${n}`).classList.toggle('active', n===v);
     const nb=document.getElementById(`nav-${n}`);
     if (nb) nb.classList.toggle('active', n===v);
   });
   if (v==='settings') renderSettings();
   if (v==='week') renderWeek();
+  if (v==='done') renderDone();
 }
 
 // ── Sheet ─────────────────────────────────────────
@@ -1571,6 +1641,9 @@ function openSheet(name) {
 function closeSheet() {
   document.getElementById('overlay').style.display='none';
   document.querySelectorAll('.sheet').forEach(s=>s.style.display='none');
+  _editTaskId = null;
+  const title = document.querySelector('#sheet-task .sheet-title');
+  if (title) title.textContent = 'New task';
 }
 
 function overlayTap(e) {
@@ -1631,8 +1704,14 @@ function saveTask() {
     minTemp: parseFloat(document.getElementById('t-tmin').value)||null,
     maxTemp: parseFloat(document.getElementById('t-tmax').value)||null,
   };
-  S.tasks.push({id:uid(),name,icon,profile,custom,dur,daylight,recurring,interval,locId,lastDone:null,lastSug:null});
-  save(); closeSheet(); match(); renderCards(); setView('home');
+  if (_editTaskId) {
+    const task = S.tasks.find(t => t.id === _editTaskId);
+    if (task) Object.assign(task, {name,icon,profile,custom,dur,daylight,recurring,interval,locId});
+    _editTaskId = null;
+  } else {
+    S.tasks.push({id:uid(),name,icon,profile,custom,dur,daylight,recurring,interval,locId,lastDone:null,lastSug:null});
+  }
+  save(); closeSheet(); match(); render(); setView('home');
 }
 
 // ── Location form ─────────────────────────────────
@@ -1735,6 +1814,88 @@ function detectGeo() {
     document.getElementById('l-name').value = 'Current location';
     document.getElementById('l-selected').style.display = 'block';
   }, () => alert('Could not get your location'));
+}
+
+// ── Done view ─────────────────────────────────────
+function isDone(task) {
+  if (!task.lastDone) return false;
+  if (!task.recurring) return true;
+  return (Date.now() - task.lastDone) / 86400000 < (task.interval || 7);
+}
+
+function renderDone() {
+  const el = document.getElementById('done-list');
+  if (!el) return;
+  const done = S.tasks.filter(isDone);
+  if (!done.length) {
+    el.innerHTML = `<div class="empty"><div class="empty-card">
+      <div class="empty-glyph">✓</div>
+      <div class="empty-title">Nothing done yet</div>
+      <p class="empty-body">Completed tasks appear here. Tap "Mark done" on any active task card.</p>
+    </div></div>`;
+    return;
+  }
+  const timeAgo = t => {
+    const h = (Date.now()-t)/3600000;
+    if (h < 24) return `${Math.round(h)}h ago`;
+    return `${Math.floor(h/24)}d ago`;
+  };
+  el.innerHTML = done.map(task => {
+    const coolLeft = task.recurring
+      ? Math.ceil((task.interval||7) - (Date.now()-task.lastDone)/86400000)
+      : null;
+    const meta = coolLeft !== null
+      ? `Done ${timeAgo(task.lastDone)} · back in ${coolLeft}d`
+      : `Done ${timeAgo(task.lastDone)}`;
+    return `<div class="done-card">
+      <div class="done-check">✓</div>
+      <div class="done-info">
+        <div class="done-name">${task.icon} ${task.name}</div>
+        <div class="done-meta">${meta}</div>
+      </div>
+      <div class="done-actions">
+        <button class="btn-edit-sm" onclick="editTask('${task.id}')">Edit</button>
+        <button class="btn-reactivate" onclick="reactivateTask('${task.id}')">Re-activate</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function reactivateTask(id) {
+  const task = S.tasks.find(t => t.id === id);
+  if (!task) return;
+  task.lastDone = null;
+  save(); match(); renderCards(); renderDone();
+}
+
+// ── Edit task ─────────────────────────────────────
+let _editTaskId = null;
+
+function editTask(id) {
+  _editTaskId = id;
+  const task = S.tasks.find(t => t.id === id);
+  if (!task) return;
+  openSheet('task');
+  // Sheet opens blank first (initTaskForm runs), then we fill it
+  requestAnimationFrame(() => {
+    document.querySelector('#sheet-task .sheet-title').textContent = 'Edit task';
+    document.getElementById('t-name').value = task.name;
+    document.getElementById('t-profile').value = task.profile;
+    document.getElementById('t-dur').value = task.dur;
+    if (task.daylight) document.getElementById('tog-day').classList.add('on');
+    if (task.recurring) { document.getElementById('tog-rec').classList.add('on'); showRecurring(); }
+    if (task.interval) document.getElementById('t-interval').value = task.interval;
+    if (task.profile === 'custom') {
+      document.getElementById('custom-block').style.display = 'block';
+      if (task.custom?.maxWind) document.getElementById('t-wind').value = task.custom.maxWind;
+      if (task.custom?.minTemp) document.getElementById('t-tmin').value = task.custom.minTemp;
+      if (task.custom?.maxTemp) document.getElementById('t-tmax').value = task.custom.maxTemp;
+    }
+    document.getElementById('t-loc').value = task.locId;
+    document.querySelectorAll('.icon-opt').forEach(el => {
+      el.classList.toggle('sel', el.textContent.trim() === task.icon.trim());
+    });
+  });
 }
 
 // ── Templates ─────────────────────────────────────
