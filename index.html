@@ -1587,7 +1587,7 @@ function renderCards() {
       const today = new Date(); today.setHours(0,0,0,0);
       const allChips = Array.from({length:16}, (_, di) => {
         const d = new Date(today); d.setDate(today.getDate() + di);
-        const ds = d.toISOString().slice(0,10);
+        const ds = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
         const winIdx = r.windows.findIndex(ww => ww.winDay === ds);
         const isViable = winIdx >= 0;
         const isActive = isViable && winIdx === sel;
@@ -1688,7 +1688,7 @@ function renderWeek() {
   const DAYS=['Su','Mo','Tu','We','Th','Fr','Sa'];
   el.innerHTML = Array.from({length:7},(_,i)=>{
     const d=new Date(today); d.setDate(today.getDate()+i);
-    const ds=d.toISOString().slice(0,10);
+    const ds=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
     const hits=S.tasks.map(task=>{
       const r=S.results[task.id];
       if (!r||r._cooldown) return null;
