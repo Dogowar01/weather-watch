@@ -288,6 +288,66 @@
       50%      { box-shadow: 0 0 0 1.5px var(--amber) inset, 0 0 8px rgba(201,137,78,0.7); opacity: 0.85; }
     }
 
+    /* ── Alternative windows ────────────────── */
+    .alts { margin-top: 13px; }
+    .alts-label {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: var(--ink-3);
+      font-family: 'Menlo','Monaco',monospace;
+      display: block;
+      margin-bottom: 7px;
+    }
+    .alts-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .alt-chip {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      padding: 7px 11px;
+      background: var(--bg-2);
+      border: 1px solid var(--line);
+      border-radius: var(--r-sm);
+      cursor: pointer;
+      font-family: inherit;
+      transition: border-color .15s, background .15s, transform .12s;
+    }
+    .alt-chip:hover {
+      border-color: var(--line-2);
+      transform: translateY(-1px);
+    }
+    .alt-chip.active {
+      background: var(--bg-3);
+      border-color: var(--amber-line);
+    }
+    .alt-day {
+      font-size: 0.72rem;
+      color: var(--ink-2);
+      white-space: nowrap;
+    }
+    .alt-chip.active .alt-day { color: var(--ink); }
+    .alt-time {
+      font-family: 'Menlo','Monaco',monospace;
+      font-size: 0.65rem;
+      color: var(--ink-3);
+    }
+    .alt-score {
+      font-family: 'Menlo','Monaco',monospace;
+      font-size: 0.62rem;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 10px;
+      margin-top: 1px;
+    }
+    .alt-score.high { background: var(--green-bg); color: #82C495; }
+    .alt-score.mid  { background: var(--amber-bg); color: #C9894E; }
+    .alt-score.low  { background: var(--red-bg);   color: #C47A7A; }
+
     /* ── Reminder & outcome ─────────────────── */
     .card-footer {
       border-top: 1px solid var(--line);
@@ -847,7 +907,8 @@ let S = {
   tasks:     [],
   forecasts: {},
   outcomes:  [],
-  results:   {},
+  results:   {},   // taskId → { windows: [...], _cooldown: bool }
+  sel:       {},   // taskId → selected window index
   view:      'home',
   loading:   false,
 };
@@ -858,12 +919,14 @@ function save() {
   localStorage.setItem('ww_tasks', JSON.stringify(S.tasks));
   localStorage.setItem('ww_fc',    JSON.stringify(S.forecasts));
   localStorage.setItem('ww_out',   JSON.stringify(S.outcomes));
+  localStorage.setItem('ww_sel',   JSON.stringify(S.sel));
 }
 function load() {
   S.locs      = JSON.parse(localStorage.getItem('ww_locs')  || '[]');
   S.tasks     = JSON.parse(localStorage.getItem('ww_tasks') || '[]');
   S.forecasts = JSON.parse(localStorage.getItem('ww_fc')    || '{}');
   S.outcomes  = JSON.parse(localStorage.getItem('ww_out')   || '[]');
+  S.sel       = JSON.parse(localStorage.getItem('ww_sel')   || '{}');
 }
 
 // ── Profile ───────────────────────────────────────
@@ -892,7 +955,33 @@ function scoreHr(precip, wind, temp, p) {
   return Math.max(0, Math.min(100, s));
 }
 
-function findWindow(task, fc) {
+function buildWindowObj(fc, scores, s, e, minDur, p) {
+  const winDay = fc.times[s].slice(0,10);
+  const ds = fc.times.findIndex(t => t.startsWith(winDay));
+  const de = Math.min(ds + 24, fc.times.length);
+  const strip = [];
+  for (let i = ds; i < de; i++) {
+    let cls = 'night';
+    const sc = scores[i];
+    if (sc > 0) cls = sc >= 70 ? 'good' : sc >= 35 ? 'mar' : 'rain';
+    else if (fc.precip[i] > 0) cls = 'rain';
+    strip.push({ cls, win: i >= s && i <= e });
+  }
+  const wStart = new Date(fc.times[s]);
+  const wEnd   = new Date(fc.times[e]); wEnd.setHours(wEnd.getHours() + 1);
+  const sl = fc.precip.slice(s, e+1), wl = fc.wind.slice(s, e+1), tl = fc.temp.slice(s, e+1);
+  const maxP = Math.max(...sl), maxW = Math.max(...wl);
+  const avgT = tl.reduce((a,b)=>a+b,0)/tl.length;
+  let sum = 0; for (let m = s; m <= e; m++) sum += scores[m];
+  const avg = sum / (e - s + 1);
+  const parts = [];
+  if (maxP === 0) parts.push(`${minDur}h dry`); else parts.push(`${Math.round(100-maxP)}% dry`);
+  if (p.maxWind !== null) parts.push(`wind ${Math.round(maxW)} km/h`);
+  parts.push(`${Math.round(avgT)}°C`);
+  return { score: Math.round(avg), wStart, wEnd, strip, winDay, reason: parts.join(' · ') };
+}
+
+function findWindows(task, fc, maxResults = 5) {
   if (!fc) return null;
   const p = prof(task);
   const minDur = p.dur;
@@ -914,7 +1003,8 @@ function findWindow(task, fc) {
     scores.push(scoreHr(fc.precip[i]??0, fc.wind[i]??0, fc.temp[i]??15, p));
   }
 
-  let best = null, bestAvg = -1;
+  // Find best sub-window per day
+  const byDay = {};
   let i = 0;
   while (i < scores.length) {
     if (scores[i] <= 0) { i++; continue; }
@@ -925,42 +1015,31 @@ function findWindow(task, fc) {
         let sum = 0;
         for (let m = k; m < k + minDur; m++) sum += scores[m];
         const avg = sum / minDur;
-        if (avg > bestAvg) { bestAvg = avg; best = { s: k, e: k + minDur - 1 }; }
+        const day = fc.times[k].slice(0,10);
+        if (!byDay[day] || avg > byDay[day].avg) byDay[day] = { avg, s: k, e: k + minDur - 1 };
       }
     }
     i = j;
   }
-  if (!best) return null;
 
-  // Strip: 24h of window's day
-  const winDay = fc.times[best.s].slice(0,10);
-  const ds = fc.times.findIndex(t => t.startsWith(winDay));
-  const de = Math.min(ds + 24, fc.times.length);
-  const strip = [];
-  for (let i = ds; i < de; i++) {
-    let cls = 'night';
-    const sc = scores[i];
-    if (sc > 0) cls = sc >= 70 ? 'good' : sc >= 35 ? 'mar' : 'rain';
-    else if (fc.precip[i] > 0) cls = 'rain';
-    strip.push({ cls, win: i >= best.s && i <= best.e });
-  }
+  const days = Object.keys(byDay);
+  if (!days.length) return null;
 
-  const wStart = new Date(fc.times[best.s]);
-  const wEnd   = new Date(fc.times[best.e]); wEnd.setHours(wEnd.getHours()+1);
+  // Sort: soonest-first for days within 2pts of the overall best score;
+  // remaining days sorted by score descending. (Brief tiebreak rule.)
+  const bestScore = Math.max(...days.map(d => byDay[d].avg));
+  days.sort((a, b) => {
+    const da = byDay[a], db = byDay[b];
+    const aC = bestScore - da.avg <= 2, bC = bestScore - db.avg <= 2;
+    if (aC && bC) return a < b ? -1 : 1;
+    if (aC) return -1; if (bC) return 1;
+    return db.avg - da.avg;
+  });
 
-  const sl    = fc.precip.slice(best.s, best.e+1);
-  const wl    = fc.wind.slice(best.s, best.e+1);
-  const tl    = fc.temp.slice(best.s, best.e+1);
-  const maxP  = Math.max(...sl);
-  const maxW  = Math.max(...wl);
-  const avgT  = tl.reduce((a,b)=>a+b,0)/tl.length;
-  const parts = [];
-  if (maxP === 0) parts.push(`${minDur}h dry`);
-  else parts.push(`${Math.round(100-maxP)}% dry`);
-  if (p.maxWind !== null) parts.push(`wind ${Math.round(maxW)} km/h`);
-  parts.push(`${Math.round(avgT)}°C`);
-
-  return { score: Math.round(bestAvg), wStart, wEnd, strip, winDay, reason: parts.join(' · ') };
+  return days.slice(0, maxResults).map(day => {
+    const { s, e } = byDay[day];
+    return buildWindowObj(fc, scores, s, e, minDur, p);
+  });
 }
 
 // ── Forecast ──────────────────────────────────────
@@ -999,15 +1078,27 @@ async function refresh() {
 
 // ── Match ─────────────────────────────────────────
 function match() {
-  S.results = {};
   for (const task of S.tasks) {
-    const r = findWindow(task, S.forecasts[task.locId]);
-    if (r && task.recurring && task.lastDone) {
-      const days = (Date.now()-task.lastDone)/86400000;
-      if (days < (task.interval||7)) r._cooldown = true;
-    }
-    S.results[task.id] = r;
+    const windows = findWindows(task, S.forecasts[task.locId]);
+    const cooldown = !!(task.recurring && task.lastDone &&
+      (Date.now()-task.lastDone)/86400000 < (task.interval||7));
+    S.results[task.id] = windows ? { windows, _cooldown: cooldown } : null;
+    // Clamp saved selection if windows shrank
+    if (windows && S.sel[task.id] >= windows.length) S.sel[task.id] = 0;
   }
+}
+
+// Active window for a task (respects user selection)
+function getWin(taskId) {
+  const r = S.results[taskId];
+  if (!r || r._cooldown || !r.windows?.length) return null;
+  return r.windows[S.sel[taskId] || 0];
+}
+
+function selectWin(taskId, idx) {
+  S.sel[taskId] = idx;
+  save();
+  renderCards();
 }
 
 // ── Format ────────────────────────────────────────
@@ -1028,13 +1119,13 @@ function bandClass(score) {
 function locLabel(id) { return S.locs.find(l=>l.id===id)?.label||'—'; }
 
 // ── Reminder ─────────────────────────────────────
-function wantReminder(task, r) {
-  if (!r || r._cooldown || r.score < 90) return false;
+function wantReminder(task, w) {
+  if (!w || w.score < 90) return false;
   const p = task.lastSug;
   if (!p) return true;
   if (p.dismissed) {
-    if (Math.abs(r.score - p.score) <= 2 &&
-        new Date(p.wStart).toDateString() === new Date(r.wStart).toDateString()) return false;
+    if (Math.abs(w.score - p.score) <= 2 &&
+        new Date(p.wStart).toDateString() === new Date(w.wStart).toDateString()) return false;
     return true;
   }
   return false;
@@ -1059,17 +1150,17 @@ function genICS(task, r) {
 }
 
 function addReminder(id) {
-  const task=S.tasks.find(t=>t.id===id), r=S.results[id];
-  if (!task||!r) return;
-  genICS(task,r);
-  task.lastSug={wStart:r.wStart,wEnd:r.wEnd,score:r.score,dismissed:false,outcomeLogged:false};
+  const task=S.tasks.find(t=>t.id===id), w=getWin(id);
+  if (!task||!w) return;
+  genICS(task,w);
+  task.lastSug={wStart:w.wStart,wEnd:w.wEnd,score:w.score,dismissed:false,outcomeLogged:false};
   save(); renderCards();
 }
 
 function dismissReminder(id) {
-  const task=S.tasks.find(t=>t.id===id), r=S.results[id];
-  if (!task||!r) return;
-  task.lastSug={wStart:r.wStart,wEnd:r.wEnd,score:r.score,dismissed:true,outcomeLogged:false};
+  const task=S.tasks.find(t=>t.id===id), w=getWin(id);
+  if (!task||!w) return;
+  task.lastSug={wStart:w.wStart,wEnd:w.wEnd,score:w.score,dismissed:true,outcomeLogged:false};
   save(); renderCards();
 }
 
@@ -1122,33 +1213,59 @@ function renderCards() {
 
   el.innerHTML = sorted.map(task => {
     const r   = S.results[task.id];
-    const bc  = r&&!r._cooldown ? bandClass(r.score) : 'none';
-    const rem = wantReminder(task,r);
+    const w   = getWin(task.id);
+    const sel = S.sel[task.id] || 0;
+    const bc  = w ? bandClass(w.score) : 'none';
+    const rem = wantReminder(task, w);
     const pw  = pastWin(task);
 
     let body = '';
-    if (r && !r._cooldown) {
-      const strip = r.strip.map(h=>`<div class="s-hr ${h.cls}${h.win?' win':''}"></div>`).join('');
-      const dayStr = new Date(r.wStart).toLocaleDateString('en',{weekday:'long',day:'numeric',month:'short'});
-      body = `
-        <div class="card-window-label">Best window</div>
-        <div class="card-window">${fmtWin(r.wStart,r.wEnd)}</div>
-        <div class="card-reason">${r.reason}<span class="card-location-tag">${locLabel(task.locId)}</span></div>
-        <div class="strip-wrap">
-          <div class="strip-day-label">${dayStr}</div>
-          <div class="strip">${strip}</div>
-        </div>`;
-    } else if (r?._cooldown) {
+    if (r && r._cooldown) {
       const dLeft = Math.ceil((task.interval||7)-(Date.now()-task.lastDone)/86400000);
       body = `<p class="card-muted">On cooldown — check back in ~${dLeft} day${dLeft!==1?'s':''}.</p>
               <div class="card-reason" style="margin:0"><span class="card-location-tag">${locLabel(task.locId)}</span></div>`;
+    } else if (w) {
+      const strip = w.strip.map(h=>`<div class="s-hr ${h.cls}${h.win?' win':''}"></div>`).join('');
+      const dayStr = new Date(w.wStart).toLocaleDateString('en',{weekday:'long',day:'numeric',month:'short'});
+
+      // Alternative window chips (other days)
+      const alts = r.windows.length > 1 ? `
+        <div class="alts">
+          <span class="alts-label">Other options</span>
+          <div class="alts-row">
+            ${r.windows.map((ow, idx) => {
+              const isActive = idx === sel;
+              const d = new Date(ow.wStart);
+              const dayName = idx===0&&sel===0?'Today'
+                : (d - new Date()) < 86400000*1 ? 'Today'
+                : (d - new Date()) < 86400000*2 ? 'Tomorrow'
+                : d.toLocaleDateString('en',{weekday:'short',day:'numeric',month:'short'});
+              const fh = dd => { let h=dd.getHours(); const p=h>=12?'pm':'am'; h=h%12||12; return `${h}${p}`; };
+              return `<button class="alt-chip${isActive?' active':''}" onclick="selectWin('${task.id}',${idx})">
+                <span class="alt-day">${dayName}</span>
+                <span class="alt-time">${fh(d)}</span>
+                <span class="alt-score ${bandClass(ow.score)}">${ow.score}</span>
+              </button>`;
+            }).join('')}
+          </div>
+        </div>` : '';
+
+      body = `
+        <div class="card-window-label">Best window</div>
+        <div class="card-window">${fmtWin(w.wStart,w.wEnd)}</div>
+        <div class="card-reason">${w.reason}<span class="card-location-tag">${locLabel(task.locId)}</span></div>
+        <div class="strip-wrap">
+          <div class="strip-day-label">${dayStr}</div>
+          <div class="strip">${strip}</div>
+        </div>
+        ${alts}`;
     } else {
       body = `<p class="card-muted">No suitable window in the next 16 days.</p>
               <div class="card-reason" style="margin:0"><span class="card-location-tag">${locLabel(task.locId)}</span></div>`;
     }
 
     const footer = (rem || pw) ? `<div class="card-footer">${
-      rem ? `<p class="reminder-text"><strong>${fmtWin(r.wStart,r.wEnd).split(',')[0]}</strong> looks ideal — add a reminder?</p>
+      rem ? `<p class="reminder-text"><strong>${fmtWin(w.wStart,w.wEnd).split(',')[0]}</strong> looks ideal — add a reminder?</p>
         <div class="row-btns">
           <button class="btn-cta" onclick="addReminder('${task.id}')">Add to calendar</button>
           <button class="btn-ghost-sm" onclick="dismissReminder('${task.id}')">Dismiss</button>
@@ -1162,7 +1279,7 @@ function renderCards() {
         </div>` : ''
     }</div>` : '';
 
-    const isPeak = r && !r._cooldown && r.score >= 90;
+    const isPeak = w && w.score >= 90;
     return `<div class="card${isPeak?' peak':''}">
       <div class="card-inner">
         <div class="card-accent ${bc}"></div>
@@ -1170,7 +1287,7 @@ function renderCards() {
           <div class="card-head">
             <span class="task-icon">${task.icon||'☀'}</span>
             <span class="task-name">${task.name}</span>
-            ${r&&!r._cooldown?`<span class="score-pill ${bc}">${r.score}</span>`:''}
+            ${w?`<span class="score-pill ${bc}">${w.score}</span>`:''}
           </div>
           ${body}
           ${accTag(task.id)}
@@ -1197,16 +1314,17 @@ function renderWeek() {
     const hits=S.tasks.map(task=>{
       const r=S.results[task.id];
       if (!r||r._cooldown) return null;
-      if (r.winDay!==ds) return null;
-      return {task,r};
+      const w=getWin(task.id);
+      if (!w||w.winDay!==ds) return null;
+      return {task,w};
     }).filter(Boolean);
 
-    const bars = hits.length ? hits.map(({task,r})=>{
-      const ws=new Date(r.wStart), we=new Date(r.wEnd);
+    const bars = hits.length ? hits.map(({task,w})=>{
+      const ws=new Date(w.wStart), we=new Date(w.wEnd);
       const base=new Date(ws); base.setHours(0,0,0,0);
       const left=((ws-base)/864000).toFixed(1);
       const width=Math.min(((we-ws)/864000),100-parseFloat(left)).toFixed(1);
-      const color=r.score>=75?'#2A5438':r.score>=45?'#4A3C18':'#4A2828';
+      const color=w.score>=75?'#2A5438':w.score>=45?'#4A3C18':'#4A2828';
       return `<div>
         <div class="wk-bar-bg"><div class="wk-bar-fill" style="left:${left}%;width:${width}%;background:${color}"></div></div>
         <div class="wk-task-label">${task.icon} ${task.name}</div>
@@ -1387,7 +1505,7 @@ function deleteTask(id) {
 function clearData() {
   if (!confirm('Clear all data?')) return;
   localStorage.clear();
-  S={locs:[],tasks:[],forecasts:{},outcomes:[],results:{},view:'home',loading:false};
+  S={locs:[],tasks:[],forecasts:{},outcomes:[],results:{},sel:{},view:'home',loading:false};
   render(); setView('home');
 }
 
