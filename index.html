@@ -1062,9 +1062,13 @@ function prof(task) {
 
 // ── Scoring ───────────────────────────────────────
 function scoreHr(precip, wind, temp, p) {
-  if (p.rain === 0 && precip > 0) return 0;
+  // Hard-exclude hours where rain risk is too high (>30% for dry tasks)
+  const rainLimit = p.rain === 0 ? 30 : p.rain + 30;
+  if (precip > rainLimit) return 0;
   let s = 100;
-  if (precip > p.rain) s -= Math.min(50, (precip - p.rain) * 1.2);
+  // Graduated rain penalty — small chances barely affect score
+  const rainFree = p.rain === 0 ? 10 : p.rain;
+  if (precip > rainFree) s -= Math.min(50, (precip - rainFree) * 1.5);
   if (p.maxWind !== null) {
     if (wind > p.maxWind) s -= Math.min(40, (wind - p.maxWind) * 2.5);
     else if (wind < p.maxWind * 0.4) s += 4;
@@ -1143,9 +1147,9 @@ function findWindows(task, fc, maxResults = 5) {
   const byDay = {};
   let i = 0;
   while (i < scores.length) {
-    if (scores[i] <= 0) { i++; continue; }
+    if (scores[i] < 20) { i++; continue; }
     let j = i;
-    while (j < scores.length && scores[j] > 0) j++;
+    while (j < scores.length && scores[j] >= 20) j++;
     if (j - i >= minDur) {
       for (let k = i; k <= j - minDur; k++) {
         let sum = 0;
