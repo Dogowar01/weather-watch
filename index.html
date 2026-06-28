@@ -28,12 +28,17 @@
       --red-bg:    rgba(143,89,89,0.12);
       --r:         14px;
       --r-sm:      8px;
+      --shadow-card: 0 1px 0 rgba(255,255,255,0.04) inset, 0 2px 6px rgba(0,0,0,0.5), 0 12px 32px rgba(0,0,0,0.45);
+      --shadow-lift: 0 1px 0 rgba(255,255,255,0.06) inset, 0 4px 12px rgba(0,0,0,0.6), 0 20px 48px rgba(0,0,0,0.55);
       --r-xs:      5px;
     }
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     html { -webkit-text-size-adjust: 100%; }
     body {
       background: var(--bg);
+      background-image:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(201,137,78,0.06) 0%, transparent 70%),
+        radial-gradient(ellipse 60% 40% at 20% 110%, rgba(95,144,112,0.04) 0%, transparent 60%);
       color: var(--ink);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 15px;
@@ -120,14 +125,31 @@
       gap: 10px;
     }
 
+    /* ── 3D card depth ───────────────────────── */
     .card {
-      background: var(--bg-1);
+      background: linear-gradient(160deg, #1C1C19 0%, #131311 100%);
       border: 1px solid var(--line);
       border-radius: var(--r);
       overflow: hidden;
-      transition: border-color .15s;
+      box-shadow: var(--shadow-card);
+      transition: transform .22s ease, box-shadow .22s ease, border-color .15s;
+      transform: perspective(900px) translateZ(0);
+      will-change: transform;
     }
-    .card:hover { border-color: var(--line-2); }
+    .card:hover {
+      border-color: var(--line-2);
+      transform: perspective(900px) translateY(-3px) translateZ(6px);
+      box-shadow: var(--shadow-lift);
+    }
+    /* Peak glow for score ≥ 90 */
+    .card.peak {
+      border-color: rgba(95,144,112,0.28);
+      animation: card-breathe 3.2s ease-in-out infinite;
+    }
+    @keyframes card-breathe {
+      0%,100% { box-shadow: var(--shadow-card), 0 0 0 0 rgba(95,144,112,0); }
+      50%      { box-shadow: var(--shadow-lift), 0 0 28px rgba(95,144,112,0.22), 0 0 0 1px rgba(95,144,112,0.18); }
+    }
 
     /* Coloured score bar on left edge */
     .card-inner {
@@ -143,6 +165,13 @@
     .card-accent.high { background: var(--green); }
     .card-accent.mid  { background: var(--amber); }
     .card-accent.low  { background: var(--red); }
+    .card.peak .card-accent.high {
+      animation: accent-pulse 3.2s ease-in-out infinite;
+    }
+    @keyframes accent-pulse {
+      0%,100% { box-shadow: none; opacity: 1; }
+      50%      { box-shadow: 2px 0 14px rgba(95,144,112,0.7); opacity: 0.85; }
+    }
 
     .card-body { flex: 1; padding: 16px 16px 14px 14px; }
 
@@ -180,6 +209,13 @@
     .score-pill.mid  { background: var(--amber-bg); color: #C9894E; }
     .score-pill.low  { background: var(--red-bg);   color: #C47A7A; }
     .score-pill.none { background: rgba(255,255,255,.04); color: var(--ink-3); }
+    .card.peak .score-pill.high {
+      animation: pill-pulse 3.2s ease-in-out infinite;
+    }
+    @keyframes pill-pulse {
+      0%,100% { box-shadow: 0 0 0 0 rgba(95,144,112,0); }
+      50%      { box-shadow: 0 0 0 5px rgba(95,144,112,0.15), 0 0 12px rgba(95,144,112,0.35); }
+    }
 
     .card-window-label {
       font-size: 0.67rem;
@@ -197,6 +233,13 @@
       line-height: 1.2;
       color: var(--ink);
       margin-bottom: 4px;
+    }
+    .card.peak .card-window {
+      animation: text-glow 3.2s ease-in-out infinite;
+    }
+    @keyframes text-glow {
+      0%,100% { text-shadow: none; }
+      50%      { text-shadow: 0 0 16px rgba(95,144,112,0.45), 0 0 32px rgba(95,144,112,0.2); }
     }
     .card-reason {
       font-size: 0.76rem;
@@ -236,7 +279,14 @@
     .s-hr.mar   { background: #4A3C18; }
     .s-hr.rain  { background: #3A2828; }
     .s-hr.night { background: var(--bg-2); }
-    .s-hr.win   { box-shadow: 0 0 0 1.5px var(--amber) inset; }
+    .s-hr.win   {
+      box-shadow: 0 0 0 1.5px var(--amber) inset;
+      animation: strip-pulse 3.2s ease-in-out infinite;
+    }
+    @keyframes strip-pulse {
+      0%,100% { box-shadow: 0 0 0 1.5px var(--amber) inset; opacity: 1; }
+      50%      { box-shadow: 0 0 0 1.5px var(--amber) inset, 0 0 8px rgba(201,137,78,0.7); opacity: 0.85; }
+    }
 
     /* ── Reminder & outcome ─────────────────── */
     .card-footer {
@@ -1112,7 +1162,8 @@ function renderCards() {
         </div>` : ''
     }</div>` : '';
 
-    return `<div class="card">
+    const isPeak = r && !r._cooldown && r.score >= 90;
+    return `<div class="card${isPeak?' peak':''}">
       <div class="card-inner">
         <div class="card-accent ${bc}"></div>
         <div class="card-body">
