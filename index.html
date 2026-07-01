@@ -292,6 +292,19 @@
     }
     .card.peak .card-window { animation: text-glow 3.2s ease-in-out infinite; }
     .card-window-dim { color: var(--ink-2) !important; font-size: 1rem !important; font-style: italic; }
+    .deadline-tag {
+      display: inline-block; margin: 2px 0 6px; padding: 3px 9px;
+      font-family: 'Menlo','Monaco',monospace; font-size: 0.68rem;
+      color: var(--amber); background: var(--amber-bg);
+      border: 1px solid var(--amber-line); border-radius: 99px;
+    }
+    .deadline-tag.urgent { color: #E86A5E; background: rgba(232,106,94,0.1); border-color: rgba(232,106,94,0.35); }
+    .sessions-list { margin: 2px 0 6px; }
+    .session-line {
+      font-family: 'Menlo','Monaco',monospace; font-size: 0.72rem;
+      color: var(--ink-2); padding: 2px 0;
+    }
+    .session-line.missing { color: #E86A5E; opacity: 0.85; }
     @keyframes text-glow {
       0%,100% { text-shadow: none; }
       50%      { text-shadow: 0 0 16px rgba(95,144,112,0.45), 0 0 32px rgba(95,144,112,0.2); }
@@ -998,6 +1011,7 @@
       <span class="app-title">Weather Window</span>
     </div>
     <div style="display:flex;gap:8px;align-items:center">
+      <button class="btn-icon-sm" id="btn-notif" title="Daily window alert" onclick="toggleNotif()">🔕</button>
       <button class="btn-icon-sm" id="btn-theme" title="Toggle theme" onclick="toggleTheme()">☽</button>
       <button class="btn-icon-sm" id="btn-refresh" title="Refresh forecast">↻</button>
     </div>
@@ -1131,6 +1145,24 @@
       <div id="recur-block" style="display:none" class="fg" style="padding-top:12px">
         <label class="fl">Minimum days between completions</label>
         <input id="t-interval" class="fi" type="number" min="1" value="7">
+      </div>
+      <div class="tog-row">
+        <span class="tog-label">Multiple sessions — e.g. two coats</span>
+        <button class="toggle" id="tog-multi" onclick="this.classList.toggle('on');showMulti()"></button>
+      </div>
+      <div id="multi-block" style="display:none">
+        <div class="fg">
+          <label class="fl">Sessions needed</label>
+          <input id="t-sessions" class="fi" type="number" min="2" max="5" value="2">
+        </div>
+        <div class="fg">
+          <label class="fl">Days between sessions</label>
+          <input id="t-gap" class="fi" type="number" min="1" max="10" value="1">
+        </div>
+      </div>
+      <div class="fg">
+        <label class="fl">Deadline — blank if flexible</label>
+        <input id="t-deadline" class="fi" type="date">
       </div>
       <div class="fg" style="margin-top:14px">
         <label class="fl">Location</label>
@@ -1288,12 +1320,29 @@ function buildWindowObj(fc, scores, s, e, minDur, p) {
   return { score: Math.round(avg), wStart, wEnd, strip, winDay, reason: parts.join(' · '), maxUV, windCompass, dayHourScores, optimalStartHour };
 }
 
+// Ground-drying penalty: rain-sensitive tasks score worse in the hours
+// right after real rainfall (mm), decaying over ~5 hours.
+function dryPenalties(fc) {
+  const n = fc.times.length, pen = new Array(n).fill(0);
+  if (!fc.rainmm) return pen;
+  for (let i = 0; i < n; i++) {
+    const mm = fc.rainmm[i] ?? 0;
+    if (mm < 0.3) continue;
+    for (let j = 1; j <= 5; j++) {
+      if (i + j >= n) break;
+      pen[i + j] += Math.min(30, mm * 8) * (1 - j / 6);
+    }
+  }
+  return pen.map(v => Math.min(40, Math.round(v)));
+}
+
 function findWindows(task, fc, maxResults = 5) {
   if (!fc) return null;
   const p = prof(task);
   const minDur = p.dur;
   const now = Date.now();
   const scores = [];
+  const drying = p.rain === 0 ? dryPenalties(fc) : null;
 
   for (let i = 0; i < fc.times.length; i++) {
     const t = new Date(fc.times[i]).getTime();
@@ -1307,7 +1356,9 @@ function findWindows(task, fc, maxResults = 5) {
         if (t < sr || t > ss) { scores.push(-1); continue; }
       }
     }
-    scores.push(scoreHr(fc.precip[i]??0, fc.wind[i]??0, fc.temp[i]??15, p));
+    let sc = scoreHr(fc.precip[i]??0, fc.wind[i]??0, fc.temp[i]??15, p);
+    if (drying && sc > 0) sc = Math.max(0, sc - drying[i]);
+    scores.push(sc);
   }
 
   // Find best sub-window per day
@@ -1337,7 +1388,8 @@ function findWindows(task, fc, maxResults = 5) {
     if (allDayScores[day] == null || scores[i] > allDayScores[day]) allDayScores[day] = scores[i];
   }
 
-  const days = Object.keys(byDay);
+  let days = Object.keys(byDay);
+  if (task.deadline) days = days.filter(d => d <= task.deadline);
   if (!days.length) return { windows: null, allDayScores };
 
   // Sort: soonest-first for days within 2pts of the overall best score;
@@ -1362,7 +1414,7 @@ function findWindows(task, fc, maxResults = 5) {
 async function fetchFC(loc) {
   const url = `https://api.open-meteo.com/v1/forecast`
     + `?latitude=${loc.lat}&longitude=${loc.lng}`
-    + `&hourly=precipitation_probability,wind_speed_10m,winddirection_10m,temperature_2m,uv_index`
+    + `&hourly=precipitation_probability,precipitation,wind_speed_10m,winddirection_10m,temperature_2m,uv_index`
     + `&daily=sunrise,sunset&forecast_days=16&timezone=auto`;
   const r = await fetch(url);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -1371,6 +1423,7 @@ async function fetchFC(loc) {
     fetchedAt:  Date.now(),
     times:      d.hourly.time,
     precip:     d.hourly.precipitation_probability,
+    rainmm:     d.hourly.precipitation,
     wind:       d.hourly.wind_speed_10m,
     winddir:    d.hourly.winddirection_10m,
     temp:       d.hourly.temperature_2m,
@@ -1392,6 +1445,7 @@ async function refresh() {
   S.loading = false;
   match();
   render();
+  if (typeof checkNotify === 'function') checkNotify();
 }
 
 // ── Match ─────────────────────────────────────────
@@ -1419,9 +1473,11 @@ function getDayView(task, dateStr) {
   if (ds < 0) return null;
   const de = Math.min(ds + 24, fc.times.length);
   const strip = [], dayHourScores = [];
+  const drying = p.rain === 0 ? dryPenalties(fc) : null;
   let bestScore = 0, bestHour = 0;
   for (let i = ds; i < de; i++) {
-    const sc = scoreHr(fc.precip[i]??0, fc.wind[i]??0, fc.temp[i]??15, p);
+    let sc = scoreHr(fc.precip[i]??0, fc.wind[i]??0, fc.temp[i]??15, p);
+    if (drying && sc > 0) sc = Math.max(0, sc - drying[i]);
     let cls = 'night';
     if (sc > 0) cls = sc >= 70 ? 'good' : sc >= 35 ? 'mar' : 'rain';
     else if ((fc.precip[i]??0) > 0) cls = 'rain';
@@ -1455,6 +1511,26 @@ function getWin(taskId) {
   const newWStart = new Date(w.wStart); newWStart.setHours(start, 0, 0, 0);
   const newWEnd = new Date(newWStart); newWEnd.setHours(start + dur, 0, 0, 0);
   return { ...w, score: avgScore, wStart: newWStart, wEnd: newWEnd, manualHour: start };
+}
+
+// Follow-up windows for multi-session tasks (e.g. coat 2 of paint),
+// each at least gapDays after the previous session's day.
+function nextSessions(task, r, w) {
+  const need = (task.sessions || 1) - 1;
+  if (need < 1 || !r?.windows?.length || !w?.winDay) return [];
+  const gap = task.gapDays || 1;
+  const byDate = [...r.windows].sort((a, b) => a.winDay < b.winDay ? -1 : 1);
+  const out = [];
+  let lastDay = w.winDay;
+  for (let n = 0; n < need; n++) {
+    const min = new Date(lastDay + 'T00:00'); min.setDate(min.getDate() + gap);
+    const minDs = min.getFullYear()+'-'+String(min.getMonth()+1).padStart(2,'0')+'-'+String(min.getDate()).padStart(2,'0');
+    const nxt = byDate.find(x => x.winDay >= minDs);
+    if (!nxt) { out.push(null); break; }
+    out.push(nxt);
+    lastDay = nxt.winDay;
+  }
+  return out;
 }
 
 function selectWin(taskId, idx) {
@@ -1653,6 +1729,28 @@ function renderCards() {
         </button>`;
       }).join('');
 
+      // Deadline tag + urgency (viable days remaining before the deadline)
+      let deadlineHtml = '';
+      if (task.deadline) {
+        const dl = new Date(task.deadline + 'T23:59');
+        const daysLeft = Math.max(0, Math.ceil((dl - Date.now()) / 86400000));
+        const viableLeft = r.windows.filter(x => x.winDay <= task.deadline).length;
+        const urgent = viableLeft <= 1 || daysLeft <= 2;
+        deadlineHtml = `<div class="deadline-tag${urgent ? ' urgent' : ''}">⏱ Due ${dl.toLocaleDateString('en',{day:'numeric',month:'short'})} — ${
+          viableLeft === 0 ? 'no viable days left!' :
+          urgent ? `only ${viableLeft} viable day${viableLeft!==1?'s':''} left` :
+          `${daysLeft} days, ${viableLeft} viable`
+        }</div>`;
+      }
+      // Follow-up sessions for multi-session tasks
+      let sessionsHtml = '';
+      if ((task.sessions || 1) > 1 && !w.noWindow) {
+        const nexts = nextSessions(task, r, w);
+        sessionsHtml = '<div class="sessions-list">' + nexts.map((nx, i) =>
+          nx ? `<div class="session-line">Session ${i+2}: ${fmtWin(nx.wStart, nx.wEnd)} · ${nx.score}</div>`
+             : `<div class="session-line missing">Session ${i+2}: no day found yet — check after next forecast</div>`
+        ).join('') + '</div>';
+      }
       const winBarHtml = w.noWindow ? '' :
         `<div class="strip-win-bar" id="winbar-${task.id}" style="left:${(winStart/24*100).toFixed(1)}%;width:${(dur/24*100).toFixed(1)}%"></div>`;
       const dragAttrs = w.noWindow ? '' :
@@ -1665,6 +1763,7 @@ function renderCards() {
             : fmtWin(w.wStart, w.wEnd)
         }</div>
         <div class="card-reason">${w.noWindow ? `Best single hour scores ~${w.score}` : w.reason}<span class="card-location-tag">${locLabel(task.locId)}</span></div>
+        ${deadlineHtml}${sessionsHtml}
         <div class="strip-wrap">
           <div class="strip-day-label">${dayStr}</div>
           <div class="strip-container">
@@ -1860,8 +1959,13 @@ function initTaskForm() {
   document.getElementById('t-dur').value='3';
   document.getElementById('tog-day').className='toggle';
   document.getElementById('tog-rec').className='toggle';
+  document.getElementById('tog-multi').className='toggle';
   document.getElementById('custom-block').style.display='none';
   document.getElementById('recur-block').style.display='none';
+  document.getElementById('multi-block').style.display='none';
+  document.getElementById('t-sessions').value='2';
+  document.getElementById('t-gap').value='1';
+  document.getElementById('t-deadline').value='';
   const ig=document.getElementById('icon-grid');
   ig.innerHTML=ICONS.map((ic,i)=>`<div class="icon-opt${i===0?' sel':''}" onclick="pickIcon(this)">${ic}</div>`).join('');
   const sel=document.getElementById('t-loc');
@@ -1888,6 +1992,11 @@ function showRecurring() {
   document.getElementById('recur-block').style.display=on?'block':'none';
 }
 
+function showMulti() {
+  const on=document.getElementById('tog-multi').classList.contains('on');
+  document.getElementById('multi-block').style.display=on?'block':'none';
+}
+
 function uid() { return (crypto.randomUUID?crypto.randomUUID().slice(0,8):Math.random().toString(36).slice(2,10)); }
 
 function saveTask() {
@@ -1901,6 +2010,10 @@ function saveTask() {
   const daylight= document.getElementById('tog-day').classList.contains('on');
   const recurring=document.getElementById('tog-rec').classList.contains('on');
   const interval= parseInt(document.getElementById('t-interval')?.value)||7;
+  const multi   = document.getElementById('tog-multi').classList.contains('on');
+  const sessions= multi ? Math.max(2, parseInt(document.getElementById('t-sessions').value)||2) : 1;
+  const gapDays = multi ? Math.max(1, parseInt(document.getElementById('t-gap').value)||1) : 1;
+  const deadline= document.getElementById('t-deadline').value || null;
   let custom=null;
   if (profile==='custom') custom={
     maxWind: parseFloat(document.getElementById('t-wind').value)||null,
@@ -1909,10 +2022,10 @@ function saveTask() {
   };
   if (_editTaskId) {
     const task = S.tasks.find(t => t.id === _editTaskId);
-    if (task) Object.assign(task, {name,icon,profile,custom,dur,daylight,recurring,interval,locId});
+    if (task) Object.assign(task, {name,icon,profile,custom,dur,daylight,recurring,interval,locId,sessions,gapDays,deadline});
     _editTaskId = null;
   } else {
-    S.tasks.push({id:uid(),name,icon,profile,custom,dur,daylight,recurring,interval,locId,lastDone:null,lastSug:null});
+    S.tasks.push({id:uid(),name,icon,profile,custom,dur,daylight,recurring,interval,locId,sessions,gapDays,deadline,lastDone:null,lastSug:null});
   }
   save(); closeSheet(); match(); render(); setView('home');
 }
@@ -2160,6 +2273,12 @@ function editTask(id) {
     if (task.daylight) document.getElementById('tog-day').classList.add('on');
     if (task.recurring) { document.getElementById('tog-rec').classList.add('on'); showRecurring(); }
     if (task.interval) document.getElementById('t-interval').value = task.interval;
+    if ((task.sessions||1) > 1) {
+      document.getElementById('tog-multi').classList.add('on'); showMulti();
+      document.getElementById('t-sessions').value = task.sessions;
+      document.getElementById('t-gap').value = task.gapDays || 1;
+    }
+    if (task.deadline) document.getElementById('t-deadline').value = task.deadline;
     if (task.profile === 'custom') {
       document.getElementById('custom-block').style.display = 'block';
       if (task.custom?.maxWind) document.getElementById('t-wind').value = task.custom.maxWind;
@@ -2226,14 +2345,65 @@ function markDone(taskId) {
   save(); match(); renderCards();
 }
 
+// ── Notifications ─────────────────────────────────
+function notifEnabled() { return localStorage.getItem('ww_notif') === '1'; }
+
+function renderNotifBtn() {
+  const b = document.getElementById('btn-notif');
+  if (b) b.textContent = notifEnabled() ? '🔔' : '🔕';
+}
+
+async function toggleNotif() {
+  if (notifEnabled()) {
+    localStorage.setItem('ww_notif', '0');
+  } else {
+    if (!('Notification' in window)) { alert('Notifications aren’t supported in this browser.'); return; }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { alert('Notifications are blocked — allow them in your browser settings.'); return; }
+    localStorage.setItem('ww_notif', '1');
+    localStorage.removeItem('ww_notif_day'); // fire today's check immediately
+    checkNotify();
+  }
+  renderNotifBtn();
+}
+
+// Once per day: if any task has a strong window today, notify.
+function checkNotify() {
+  if (!notifEnabled() || !('Notification' in window) || Notification.permission !== 'granted') return;
+  const t = new Date();
+  const todayDs = t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0');
+  if (localStorage.getItem('ww_notif_day') === todayDs) return;
+  const hits = [];
+  for (const task of S.tasks) {
+    if (task.lastDone && !task.recurring) continue;
+    const r = S.results[task.id];
+    if (!r || r._cooldown) continue;
+    const w = r.windows?.find(x => x.winDay === todayDs && x.score >= 75);
+    if (w) hits.push(`${task.icon||''} ${task.name} — ${fmtWin(w.wStart, w.wEnd)} (${w.score})`);
+  }
+  if (!hits.length) return;
+  localStorage.setItem('ww_notif_day', todayDs);
+  new Notification('Weather Window — good conditions today', { body: hits.slice(0,4).join('\n') });
+}
+
 // ── Boot ──────────────────────────────────────────
 document.getElementById('btn-refresh').addEventListener('click', refresh);
 applyTheme(localStorage.getItem('ww_theme') || 'dark');
 load(); match(); render(); setView('home');
+renderNotifBtn();
+checkNotify();
 
-const ffs=Object.values(S.forecasts);
-const newest=ffs.length?Math.max(...ffs.map(f=>f.fetchedAt||0)):0;
-if (S.locs.length && Date.now()-newest > 3*3600000) refresh();
+// Refresh stale forecasts on boot and whenever the app returns to the foreground
+function maybeRefresh() {
+  if (!S.locs.length) return;
+  const ffs = Object.values(S.forecasts);
+  const newest = ffs.length ? Math.max(...ffs.map(f => f.fetchedAt || 0)) : 0;
+  if (Date.now() - newest > 3*3600000) refresh();
+}
+maybeRefresh();
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') { maybeRefresh(); checkNotify(); }
+});
 </script>
 </body>
 </html>
