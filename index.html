@@ -1475,10 +1475,15 @@ function selectDay(taskId, dateStr) {
 // ── Format ────────────────────────────────────────
 function fmtWin(s, e) {
   const DAY = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const sd = new Date(s), ed = new Date(e), now = new Date();
-  const diff = (sd - now) / 86400000;
-  const day  = diff < 1 ? 'Today' : diff < 2 ? 'Tomorrow' : DAY[sd.getDay()];
-  const fh   = d => { let h=d.getHours(); const p=h>=12?'pm':'am'; h=h%12||12; return `${h}${p}`; };
+  const sd = new Date(s), ed = new Date(e);
+  // Compare calendar days, not rolling 24h periods
+  const mid = d => { const m = new Date(d); m.setHours(0,0,0,0); return m; };
+  const dayDiff = Math.round((mid(sd) - mid(new Date())) / 86400000);
+  const day = dayDiff <= 0 ? 'Today'
+            : dayDiff === 1 ? 'Tomorrow'
+            : dayDiff < 7   ? DAY[sd.getDay()]
+            : sd.toLocaleDateString('en',{weekday:'short',day:'numeric',month:'short'});
+  const fh = d => { let h=d.getHours(); const p=h>=12?'pm':'am'; h=h%12||12; return `${h}${p}`; };
   return `${day}, ${fh(sd)}–${fh(ed)}`;
 }
 
